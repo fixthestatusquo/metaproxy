@@ -1,6 +1,6 @@
 {
   "name": "@proca/metaproxy",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Metabase proxy that checks parameters vs Proca credentials",
   "main": "index.js",
   "license": "MIT",
@@ -19,8 +19,13 @@
     "build": "npx tsc",
     "watch": "npx tsc -w"
   },
+  "bin": {
+    "metaproxy": "bin/metaproxy"
+  },
   "files": [
-    "bin", "dist", "README.MD"
+    "bin",
+    "dist",
+    "README.MD"
   ],
   "devDependencies": {
     "@types/graphql": "^14.5.0",
