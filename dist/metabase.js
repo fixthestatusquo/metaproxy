@@ -12,15 +12,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.fetchCard = exports.wrapParam = exports.getParametersInfo = exports.updateSession = exports.fetchSession = exports.api = exports.apiUrl = exports.auth = void 0;
+exports.fetchCard = exports.wrapParam = exports.getParametersInfo = exports.updateSession = exports.fetchSession = exports.api = exports.apiUrl = void 0;
 const node_fetch_1 = __importDefault(require("node-fetch"));
-const api_1 = require("@proca/api");
-exports.auth = api_1.basicAuth({
-    username: process.env['METABASE_USERNAME'],
-    password: process.env['METABASE_PASSWORD']
-});
+// export const auth = basicAuth({
+//   username: process.env['METABASE_USERNAME'], 
+//   password: process.env['METABASE_PASSWORD']
+// })
 const apiUrl = (path) => {
-    return `https://dashboard.proca.app/api${path}`;
+    return process.env['METABASE_URL'] + '/api' + path;
 };
 exports.apiUrl = apiUrl;
 const session = { id: undefined };
@@ -61,6 +60,7 @@ exports.updateSession = updateSession;
 // CARD {"type":"native","native":{"query":"SELECT * from \ncampaigns \n\n[[ WHERE {{campaign_name}}]]","template-tags":{"campaign_name":{"id":"5dd2c39a-7222-c46d-8de0-15efaffa1d98","name":"campaign_name","display-name":"Campaign name","type":"dimension","dimension":["field-id",63],"widget-type":"category","default":null}}},"database":2}
 const getParametersInfo = (cardId) => __awaiter(void 0, void 0, void 0, function* () {
     const card = yield exports.api('GET', `/card/${cardId}`);
+    console.log('dataset_query', card['dataset_query']);
     if (card['dataset_query']['type'] !== 'native')
         return {};
     const parSpec = card['dataset_query']['native']['template-tags'];
@@ -80,6 +80,7 @@ const wrapParam = (name, value, type) => {
             return { type: 'category', target: ['dimension', ['template-tag', name]], value: [value] };
         }
         case 'number':
+            return { type: 'category', target: ['variable', ['template-tag', name]], value: parseInt(value) };
         case 'date':
         case 'text': {
             return { type: 'category', target: ['variable', ['template-tag', name]], value: value };

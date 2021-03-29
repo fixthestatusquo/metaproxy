@@ -18,8 +18,14 @@ const jwks_rsa_1 = __importDefault(require("jwks-rsa"));
 const node_cache_1 = __importDefault(require("node-cache"));
 const metabase_1 = require("./metabase");
 const cache = new node_cache_1.default();
-for (const v of ['JWKS_URL', 'METABASE_USERNAME', 'METABASE_PASSWORD']) {
-    if (!(v in process.env))
+const cacheTimeout = parseInt(process.env['CACHE_TIMEOUT'] || '15');
+for (const v of [
+    'JWKS_URL',
+    'METABASE_URL',
+    'METABASE_USERNAME',
+    'METABASE_PASSWORD'
+]) {
+    if (!process.env[v])
         throw new Error(`Set ${v}`);
 }
 const jwks = ({ jwks, algs = ["RS256"] }) => express_jwt_1.default({
@@ -43,22 +49,22 @@ app.get("/card/:id", checkJwt, (req, res, next) => __awaiter(void 0, void 0, voi
     let cardInfo = cache.get(key4info);
     if (cardInfo === undefined) {
         cardInfo = yield metabase_1.getParametersInfo(cardId);
-        cache.set(key4info, cardInfo, 1000 * 10);
+        console.log(`Question ${cardId} parameters info:`, cardInfo);
+        cache.set(key4info, cardInfo, cacheTimeout);
     }
-    console.log('WTF', Object.entries(req.query));
+    console.log('Request params:', Object.entries(req.query));
     for (const name of Object.keys(cardInfo)) {
         const value = req.query[name];
         if (value)
             cardParams.push(metabase_1.wrapParam(name, value, cardInfo[name]));
     }
-    console.log('cardParams:', cardParams);
+    console.log('cardParams for API:', cardParams);
     // get data with caching
     const key = JSON.stringify([cardId, Object.entries(cardParams).sort()]);
     let data = cache.get(key);
     if (data === undefined) {
         data = yield metabase_1.fetchCard(cardId, cardParams);
-        console.log('boom', key, data);
-        cache.set(key, data, 30 * 1000);
+        cache.set(key, data, cacheTimeout);
     }
     res.status(200);
     res.setHeader('Content-Type', 'application/json');

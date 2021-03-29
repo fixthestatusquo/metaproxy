@@ -4,11 +4,15 @@ import jwksRsa from 'jwks-rsa'
 import NodeCache from 'node-cache'
 import {api, updateSession, getParametersInfo, wrapParam, fetchCard} from './metabase'
 
-
 const cache = new NodeCache()
+const cacheTimeout = parseInt(process.env['CACHE_TIMEOUT'] || '15')
 
-for (const v of ['JWKS_URL', 'METABASE_USERNAME', 'METABASE_PASSWORD']) {
-    if (!(v in process.env)) 
+for (const v of [
+        'JWKS_URL', 
+        'METABASE_URL', 
+        'METABASE_USERNAME', 
+        'METABASE_PASSWORD']) {
+    if (!process.env[v]) 
         throw new Error(`Set ${v}`)
 }
 
@@ -38,16 +42,17 @@ app.get("/card/:id", checkJwt, async (req, res, next) => {
     let cardInfo = cache.get(key4info)
     if (cardInfo === undefined) {
         cardInfo = await getParametersInfo(cardId)
-        cache.set(key4info, cardInfo, 1000*10)
+        console.log(`Question ${cardId} parameters info:`, cardInfo)
+        cache.set(key4info, cardInfo, cacheTimeout)
     }
 
-    console.log('WTF', Object.entries(req.query))
+    console.log('Request params:', Object.entries(req.query))
     for (const name of Object.keys(cardInfo))  {
         const value = req.query[name] as string
         if (value)
             cardParams.push(wrapParam(name, value, cardInfo[name]))
     }
-    console.log('cardParams:', cardParams)
+    console.log('cardParams for API:', cardParams)
 
 
     // get data with caching
@@ -55,8 +60,7 @@ app.get("/card/:id", checkJwt, async (req, res, next) => {
     let data : any = cache.get(key)
     if (data === undefined) {
         data = await fetchCard(cardId, cardParams);
-        console.log('boom', key, data)
-        cache.set(key, data, 30*1000)
+        cache.set(key, data, cacheTimeout)
     }
 
     res.status(200)

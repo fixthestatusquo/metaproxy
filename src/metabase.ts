@@ -1,10 +1,10 @@
 import fetch from 'node-fetch'
 import {basicAuth} from '@proca/api'
 
-export const auth = basicAuth({
-  username: process.env['METABASE_USERNAME'], 
-  password: process.env['METABASE_PASSWORD']
-})
+// export const auth = basicAuth({
+//   username: process.env['METABASE_USERNAME'], 
+//   password: process.env['METABASE_PASSWORD']
+// })
 
 export const apiUrl = (path:string) => {
   return process.env['METABASE_URL'] + '/api' + path
@@ -76,6 +76,7 @@ export const wrapParam = (name : string, value : string, type : string) => {
       return {type: 'category', target: ['dimension', ['template-tag', name]], value: [value]}
     }
     case 'number':
+      return {type: 'category', target: ['variable', ['template-tag', name]], value: parseInt(value)}
     case 'date':
     case 'text': {
       return {type: 'category', target: ['variable', ['template-tag', name]], value: value}
