@@ -65,8 +65,10 @@ exports.updateSession = updateSession;
 const getParametersInfo = (cardId) => __awaiter(void 0, void 0, void 0, function* () {
     const card = yield exports.api('GET', `/card/${cardId}`);
     const collection = card['collection']['slug'];
-    if (COLLECTION.indexOf(collection) < 0)
+    if (COLLECTION.indexOf(collection) < 0) {
+        console.error(`Forbidden access to collection ${collection}`);
         throw new Error(`Forbidden access to collection ${collection}`);
+    }
     if (card['dataset_query']['type'] !== 'native')
         return {};
     const parSpec = card['dataset_query']['native']['template-tags'];
