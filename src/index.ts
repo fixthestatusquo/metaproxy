@@ -1,6 +1,20 @@
 import express, {Request, Response, NextFunction} from 'express'
 import NodeCache from 'node-cache'
 import {api, updateSession, getParametersInfo, wrapParam, fetchCard} from './metabase'
+import {fetchUser, allowParams, UserData} from './user'
+
+interface Context {
+    user: UserData | null
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      context: Context
+    }
+  }
+}
+
 
 const cache = new NodeCache()
 const cacheTimeout = parseInt(process.env['CACHE_TIMEOUT'] || '15')
@@ -17,43 +31,57 @@ for (const v of [
 
 const app = express()
 
+app.use(async (req, res, next) => {
+    req.context = {user: null}
+    const auth = req.headers.authorization
+    if (auth) {
+        req.context.user = await fetchUser(auth)
+    }
+
+    next()
+})
+
 
 // Add middleware to a route to protect it
 app.get("/card/:id", async (req, res, next) => {
+    if (!allowParams(req.context?.user, req.query)) {
+        return next(Error("User not authorized to use this parameter"))
+    }
+
     try {
-    const cardId = parseInt(req.params.id)
-    const cardParams = []
+        const cardId = parseInt(req.params.id)
+        const cardParams = []
 
-    const key4info = `info-${cardId}`
-    let cardInfo = cache.get(key4info)
-    if (cardInfo === undefined) {
-        cardInfo = await getParametersInfo(cardId)
-        console.log(`Question ${cardId} parameters info:`, cardInfo)
-        cache.set(key4info, cardInfo, cacheTimeout)
-    }
+        const key4info = `info-${cardId}`
+        let cardInfo = cache.get(key4info)
+        if (cardInfo === undefined) {
+            cardInfo = await getParametersInfo(cardId)
+            console.log(`Question ${cardId} parameters info:`, cardInfo)
+            cache.set(key4info, cardInfo, cacheTimeout)
+        }
 
-    console.log('Request params:', Object.entries(req.query))
-    for (const name of Object.keys(cardInfo))  {
-        const value = req.query[name] as string
-        if (value)
-            cardParams.push(wrapParam(name, value, cardInfo[name]))
-    }
-    console.log('cardParams for API:', cardParams)
+        console.log('Request params:', Object.entries(req.query))
+        for (const name of Object.keys(cardInfo))  {
+            const value = req.query[name] as string
+            if (value)
+                cardParams.push(wrapParam(name, value, cardInfo[name]))
+        }
+        console.log('cardParams for API:', cardParams)
 
 
-    // get data with caching
-    const key = JSON.stringify([cardId, Object.entries(cardParams).sort()])
-    let data : any = cache.get(key)
-    if (data === undefined) {
-        data = await fetchCard(cardId, cardParams);
-        cache.set(key, data, cacheTimeout)
-    }
+        // get data with caching
+        const key = JSON.stringify([cardId, Object.entries(cardParams).sort()])
+        let data : any = cache.get(key)
+        if (data === undefined) {
+            data = await fetchCard(cardId, cardParams);
+            cache.set(key, data, cacheTimeout)
+        }
 
-    res.status(200)
-    res.setHeader('Content-Type', 'application/json')
-    res.end(JSON.stringify(data))
+        res.status(200)
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify(data))
 
-        } catch (e) {
+    } catch (e) {
             next(e)
         }
 })

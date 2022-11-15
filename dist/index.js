@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const node_cache_1 = __importDefault(require("node-cache"));
 const metabase_1 = require("./metabase");
+const user_1 = require("./user");
 const cache = new node_cache_1.default();
 const cacheTimeout = parseInt(process.env['CACHE_TIMEOUT'] || '15');
 for (const v of [
@@ -27,8 +28,20 @@ for (const v of [
         throw new Error(`Set ${v}`);
 }
 const app = express_1.default();
+app.use((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    req.context = { user: null };
+    const auth = req.headers.authorization;
+    if (auth) {
+        req.context.user = yield user_1.fetchUser(auth);
+    }
+    next();
+}));
 // Add middleware to a route to protect it
 app.get("/card/:id", (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    if (!user_1.allowParams((_a = req.context) === null || _a === void 0 ? void 0 : _a.user, req.query)) {
+        return next(Error("User not authorized to use this parameter"));
+    }
     try {
         const cardId = parseInt(req.params.id);
         const cardParams = [];
