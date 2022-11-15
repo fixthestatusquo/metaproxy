@@ -1,0 +1,13 @@
+query UserOrgs {
+  currentUser {
+    roles {
+      org {
+        __typename
+        name
+        ... on PrivateOrg {
+          id
+        }
+      }
+    }
+  }
+}
