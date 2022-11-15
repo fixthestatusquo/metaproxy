@@ -18,6 +18,7 @@ const node_fetch_1 = __importDefault(require("node-fetch"));
 //   username: process.env['METABASE_USERNAME'], 
 //   password: process.env['METABASE_PASSWORD']
 // })
+const COLLECTION = (process.env['METABASE_COLLECTION'] || '').split(',');
 const apiUrl = (path) => {
     return process.env['METABASE_URL'] + '/api' + path;
 };
@@ -38,7 +39,10 @@ const api = (method, path, params = undefined) => __awaiter(void 0, void 0, void
         headers: withSession({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(params)
     });
-    return resp.json();
+    const body = yield resp.text();
+    if (body[0] !== '{')
+        throw new Error(`Error reply: ${body}`);
+    return JSON.parse(body);
 });
 exports.api = api;
 const fetchSession = () => __awaiter(void 0, void 0, void 0, function* () {
@@ -60,7 +64,9 @@ exports.updateSession = updateSession;
 // CARD {"type":"native","native":{"query":"SELECT * from \ncampaigns \n\n[[ WHERE {{campaign_name}}]]","template-tags":{"campaign_name":{"id":"5dd2c39a-7222-c46d-8de0-15efaffa1d98","name":"campaign_name","display-name":"Campaign name","type":"dimension","dimension":["field-id",63],"widget-type":"category","default":null}}},"database":2}
 const getParametersInfo = (cardId) => __awaiter(void 0, void 0, void 0, function* () {
     const card = yield exports.api('GET', `/card/${cardId}`);
-    console.log('dataset_query', card['dataset_query']);
+    const collection = card['collection']['slug'];
+    if (COLLECTION.indexOf(collection) < 0)
+        throw new Error(`Forbidden access to collection ${collection}`);
     if (card['dataset_query']['type'] !== 'native')
         return {};
     const parSpec = card['dataset_query']['native']['template-tags'];
@@ -94,6 +100,7 @@ const fetchCard = (id, params) => __awaiter(void 0, void 0, void 0, function* ()
     const body = params.length > 0 ?
         ('parameters=' + encodeURIComponent(JSON.stringify(params))) :
         undefined;
+    console.log(`fetching card ${id} params ${params}`);
     const resp = yield node_fetch_1.default(url, {
         method: 'POST',
         headers: withSession({ 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }),

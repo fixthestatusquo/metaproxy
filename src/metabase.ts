@@ -6,6 +6,9 @@ import {basicAuth} from '@proca/api'
 //   password: process.env['METABASE_PASSWORD']
 // })
 
+
+const COLLECTION = (process.env['METABASE_COLLECTION'] || '').split(',')
+
 export const apiUrl = (path:string) => {
   return process.env['METABASE_URL'] + '/api' + path
 }
@@ -32,7 +35,12 @@ export const api = async (method : 'GET' | 'POST', path:string, params: Record<s
     body: JSON.stringify(params)
   })
 
-  return resp.json()
+  const body = await resp.text()
+
+  if (body[0] !== '{')
+    throw new Error(`Error reply: ${body}`)
+
+  return JSON.parse(body)
 }
 
 export const fetchSession = async () => {
@@ -55,6 +63,12 @@ export const updateSession = () => {
 
 export const getParametersInfo = async (cardId : number) => {
   const card = await api('GET', `/card/${cardId}`)
+
+  const collection = card['collection']['slug']
+
+  if (COLLECTION.indexOf(collection) < 0)
+    throw new Error(`Forbidden access to collection ${collection}`)
+
   if (card['dataset_query']['type'] !== 'native') return {}
   const parSpec = card['dataset_query']['native']['template-tags']
 
@@ -94,6 +108,7 @@ export const fetchCard = async (id : number, params: any) : Promise<any> => {
     ('parameters=' + encodeURIComponent(JSON.stringify(params))) :
     undefined
 
+  console.log(`fetching card ${id} params ${params}`)
   const resp = await fetch(url, { 
     method: 'POST',
     headers: withSession({ 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }),

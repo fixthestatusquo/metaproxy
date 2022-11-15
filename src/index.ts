@@ -1,6 +1,4 @@
 import express, {Request, Response, NextFunction} from 'express'
-import jwt from 'express-jwt'
-import jwksRsa from 'jwks-rsa'
 import NodeCache from 'node-cache'
 import {api, updateSession, getParametersInfo, wrapParam, fetchCard} from './metabase'
 
@@ -8,33 +6,21 @@ const cache = new NodeCache()
 const cacheTimeout = parseInt(process.env['CACHE_TIMEOUT'] || '15')
 
 for (const v of [
-        'JWKS_URL', 
-        'METABASE_URL', 
+        'METABASE_URL',
         'METABASE_USERNAME', 
-        'METABASE_PASSWORD']) {
+        'METABASE_PASSWORD',
+        'METABASE_COLLECTION']) {
     if (!process.env[v]) 
         throw new Error(`Set ${v}`)
 }
 
-const jwks = ({jwks, algs = ["RS256"]}) => jwt({ 
-  secret : jwksRsa.expressJwtSecret({
-    cache: true,
-    rateLimit: true,
-    jwksRequestsPerMinute: 5,
-    jwksUri: jwks
-  }), 
-  algorithms: algs 
-})
 
 const app = express()
 
-var checkJwt = jwks({
-    jwks : process.env['JWKS_URL']
-});
 
- 
 // Add middleware to a route to protect it
-app.get("/card/:id", checkJwt, async (req, res, next) => {
+app.get("/card/:id", async (req, res, next) => {
+    try {
     const cardId = parseInt(req.params.id)
     const cardParams = []
 
@@ -66,14 +52,18 @@ app.get("/card/:id", checkJwt, async (req, res, next) => {
     res.status(200)
     res.setHeader('Content-Type', 'application/json')
     res.end(JSON.stringify(data))
+
+        } catch (e) {
+            next(e)
+        }
 })
 
 //function errorMiddleware(error: HttpException, request: Request, response: Response, next: NextFunction) {
 app.use((err : any, _req : Request, res : Response, _next : NextFunction) => {
-  res.status(400).json({
-    name: err?.name || 'error',
-    message: err?.message || 'generic error'
-  });
+    res.status(400).json({
+        error: err?.name || 'error',
+        message: err?.message || 'generic error'
+    });
 });
 
 const appPort = process.env['PORT'] || 4040;
