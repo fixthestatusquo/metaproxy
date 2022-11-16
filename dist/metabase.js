@@ -65,7 +65,7 @@ exports.updateSession = updateSession;
 const getParametersInfo = (cardId) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     const card = yield exports.api('GET', `/card/${cardId}`);
-    const collection = (_a = card.collection) === null || _a === void 0 ? void 0 : _a.slug;
+    const collection = ((_a = card.collection) === null || _a === void 0 ? void 0 : _a.slug) || 'ROOT';
     if (COLLECTION.indexOf(collection) < 0)
         throw new Error(`Forbidden access to collection "${collection}"`);
     if (card['dataset_query']['type'] !== 'native')

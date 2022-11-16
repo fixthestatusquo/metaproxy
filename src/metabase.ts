@@ -64,7 +64,7 @@ export const updateSession = () => {
 export const getParametersInfo = async (cardId : number) => {
   const card = await api('GET', `/card/${cardId}`)
 
-  const collection = card.collection?.slug
+  const collection = card.collection?.slug || 'ROOT'
 
   if (COLLECTION.indexOf(collection) < 0)
     throw new Error(`Forbidden access to collection "${collection}"`)
