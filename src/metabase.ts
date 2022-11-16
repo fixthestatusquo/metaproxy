@@ -64,10 +64,10 @@ export const updateSession = () => {
 export const getParametersInfo = async (cardId : number) => {
   const card = await api('GET', `/card/${cardId}`)
 
-  const collection = card['collection']['slug']
+  const collection = card.collection?.slug
 
   if (COLLECTION.indexOf(collection) < 0)
-    throw new Error(`Forbidden access to collection ${collection}`)
+    throw new Error(`Forbidden access to collection "${collection}"`)
 
   if (card['dataset_query']['type'] !== 'native') return {}
   const parSpec = card['dataset_query']['native']['template-tags']

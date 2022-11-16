@@ -63,10 +63,11 @@ exports.updateSession = updateSession;
 // CARD {"database":2,"native":{"template-tags":{"campaign_name":{"id":"5dd2c39a-7222-c46d-8de0-15efaffa1d98","name":"campaign_name","display-name":"Campaign name","type":"text","default":null}},"query":"SELECT * from \ncampaigns \n\n[[ WHERE name = {{campaign_name}}]]"},"type":"native"}
 // CARD {"type":"native","native":{"query":"SELECT * from \ncampaigns \n\n[[ WHERE {{campaign_name}}]]","template-tags":{"campaign_name":{"id":"5dd2c39a-7222-c46d-8de0-15efaffa1d98","name":"campaign_name","display-name":"Campaign name","type":"dimension","dimension":["field-id",63],"widget-type":"category","default":null}}},"database":2}
 const getParametersInfo = (cardId) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
     const card = yield exports.api('GET', `/card/${cardId}`);
-    const collection = card['collection']['slug'];
+    const collection = (_a = card.collection) === null || _a === void 0 ? void 0 : _a.slug;
     if (COLLECTION.indexOf(collection) < 0)
-        throw new Error(`Forbidden access to collection ${collection}`);
+        throw new Error(`Forbidden access to collection "${collection}"`);
     if (card['dataset_query']['type'] !== 'native')
         return {};
     const parSpec = card['dataset_query']['native']['template-tags'];
