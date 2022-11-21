@@ -16,6 +16,13 @@ declare global {
 }
 
 
+import * as Sentry from '@sentry/node';
+
+Sentry.init({
+  dsn: process.env['SENTRY_DSN']
+  // ...
+});
+
 const cache = new NodeCache()
 const cacheTimeout = parseInt(process.env['CACHE_TIMEOUT'] || '15')
 
@@ -81,7 +88,8 @@ app.get("/card/:id", async (req, res, next) => {
         res.setHeader('Content-Type', 'application/json')
         res.end(JSON.stringify(data))
 
-    } catch (e) {
+        } catch (e) {
+            Sentry.captureException(e)
             next(e)
         }
 })
