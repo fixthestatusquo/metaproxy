@@ -6,6 +6,7 @@
   "license": "MIT",
   "dependencies": {
     "@proca/api": "^3.3.4",
+    "cors": "^2.8.5",
     "express": "^4.17.1",
     "express-jwt": "^6.0.0",
     "jwks-rsa": "^2.0.2",
@@ -33,6 +34,7 @@
     "@graphql-codegen/typed-document-node": "^2.3.7",
     "@graphql-codegen/typescript": "^2.8.2",
     "@graphql-codegen/typescript-operations": "^2.5.7",
+    "@types/cors": "^2.8.12",
     "@types/graphql": "^14.5.0",
     "@types/node-fetch": "^2.5.8",
     "codegen-graphql-scalar-locations": "^1.0.1-0",

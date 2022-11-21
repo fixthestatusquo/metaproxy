@@ -1,5 +1,5 @@
+//import fetch from 'node-fetch' // more tuning needed if running on node < 18.
 import {request, httpLink} from '@proca/api'
-
 import * as proca from './proca'
 
 
@@ -9,10 +9,10 @@ export const fetchUser = async (auth : string) => {
   const api = httpLink('https://api.proca.app', {authorization: auth})
 
   const result = await request<proca.UserOrgs, proca.UserOrgsVariables>(api, proca.UserOrgsDocument, {})
-
   const r = {orgIds: [], orgNames: []}
 
   if (result.error) {
+    console.error("ERROR",result.error.toString());
     return r
   }
 

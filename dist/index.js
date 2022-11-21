@@ -13,33 +13,45 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
+const cors_1 = __importDefault(require("cors"));
 const node_cache_1 = __importDefault(require("node-cache"));
 const metabase_1 = require("./metabase");
 const user_1 = require("./user");
 const cache = new node_cache_1.default();
-const cacheTimeout = parseInt(process.env['CACHE_TIMEOUT'] || '15');
+const cacheTimeout = parseInt(process.env["CACHE_TIMEOUT"] || "15");
 for (const v of [
-    'METABASE_URL',
-    'METABASE_USERNAME',
-    'METABASE_PASSWORD',
-    'METABASE_COLLECTION'
+    "METABASE_URL",
+    "METABASE_USERNAME",
+    "METABASE_PASSWORD",
+    "METABASE_COLLECTION",
 ]) {
     if (!process.env[v])
         throw new Error(`Set ${v}`);
 }
 const app = express_1.default();
+var corsOptions = {
+    origin: [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "https://we.fixthestatusquo.org",
+    ],
+};
+app.use(cors_1.default(corsOptions));
 app.use((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     req.context = { user: null };
     const auth = req.headers.authorization;
     if (auth) {
         req.context.user = yield user_1.fetchUser(auth);
+        console.log("user", req.context.user);
     }
     next();
 }));
-// Add middleware to a route to protect it
+// Add middleware to a route to protect ita
+app.options("/card/:id", cors_1.default(corsOptions));
 app.get("/card/:id", (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+    var _a, _b;
     if (!user_1.allowParams((_a = req.context) === null || _a === void 0 ? void 0 : _a.user, req.query)) {
+        console.log((_b = req.context) === null || _b === void 0 ? void 0 : _b.user, req.query);
         return next(Error("User not authorized to use this parameter"));
     }
     try {
@@ -52,13 +64,13 @@ app.get("/card/:id", (req, res, next) => __awaiter(void 0, void 0, void 0, funct
             console.log(`Question ${cardId} parameters info:`, cardInfo);
             cache.set(key4info, cardInfo, cacheTimeout);
         }
-        console.log('Request params:', Object.entries(req.query));
+        console.log("Request params:", Object.entries(req.query));
         for (const name of Object.keys(cardInfo)) {
             const value = req.query[name];
             if (value)
                 cardParams.push(metabase_1.wrapParam(name, value, cardInfo[name]));
         }
-        console.log('cardParams for API:', cardParams);
+        console.log("cardParams for API:", cardParams);
         // get data with caching
         const key = JSON.stringify([cardId, Object.entries(cardParams).sort()]);
         let data = cache.get(key);
@@ -67,7 +79,7 @@ app.get("/card/:id", (req, res, next) => __awaiter(void 0, void 0, void 0, funct
             cache.set(key, data, cacheTimeout);
         }
         res.status(200);
-        res.setHeader('Content-Type', 'application/json');
+        res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify(data));
     }
     catch (e) {
@@ -77,12 +89,12 @@ app.get("/card/:id", (req, res, next) => __awaiter(void 0, void 0, void 0, funct
 //function errorMiddleware(error: HttpException, request: Request, response: Response, next: NextFunction) {
 app.use((err, _req, res, _next) => {
     res.status(400).json({
-        error: (err === null || err === void 0 ? void 0 : err.name) || 'error',
-        message: (err === null || err === void 0 ? void 0 : err.message) || 'generic error'
+        error: (err === null || err === void 0 ? void 0 : err.name) || "error",
+        message: (err === null || err === void 0 ? void 0 : err.message) || "generic error",
     });
 });
-const appPort = process.env['PORT'] || 4040;
-metabase_1.updateSession().catch(e => console.error(e));
+const appPort = process.env["PORT"] || 4040;
+metabase_1.updateSession().catch((e) => console.error(e));
 const cron = setInterval(() => {
     metabase_1.updateSession();
 }, 1000 * 60 * 15);

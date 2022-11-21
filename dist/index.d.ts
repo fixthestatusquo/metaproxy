@@ -1,4 +1,4 @@
-import { UserData } from './user';
+import { UserData } from "./user";
 interface Context {
     user: UserData | null;
 }
