@@ -37,11 +37,9 @@ for (const v of [
 const app = express();
 
 var corsOptions = {
-  origin: [
-    "http://localhost:3000",
-    "http://localhost:3001",
-    "https://we.fixthestatusquo.org",
-  ],
+  origin: process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(",").map((d: string) => d.trim())
+    : ["http://localhost:3000"],
 };
 app.use(cors(corsOptions));
 
@@ -50,7 +48,6 @@ app.use(async (req, res, next) => {
   const auth = req.headers.authorization;
   if (auth) {
     req.context.user = await fetchUser(auth);
-    console.log("user",req.context.user);
   }
 
   next();
@@ -73,17 +70,18 @@ app.get("/card/:id", async (req, res, next) => {
     let cardInfo = cache.get(key4info);
     if (cardInfo === undefined) {
       cardInfo = await getParametersInfo(cardId);
-      console.log(`Question ${cardId} parameters info:`, cardInfo);
       cache.set(key4info, cardInfo, cacheTimeout);
     }
 
-    console.log("Request params:", Object.entries(req.query));
     for (const name of Object.keys(cardInfo)) {
       const value = req.query[name] as string;
       if (value) cardParams.push(wrapParam(name, value, cardInfo[name]));
     }
-    console.log("cardParams for API:", cardParams);
 
+    console.log(
+      `Question ${cardId} parameters`,
+      JSON.stringify(cardParams, null, 2)
+    );
     // get data with caching
     const key = JSON.stringify([cardId, Object.entries(cardParams).sort()]);
     let data: any = cache.get(key);

@@ -102,7 +102,6 @@ const fetchCard = (id, params) => __awaiter(void 0, void 0, void 0, function* ()
     const body = params.length > 0 ?
         ('parameters=' + encodeURIComponent(JSON.stringify(params))) :
         undefined;
-    console.log(`fetching card ${id} params ${params}`);
     const resp = yield node_fetch_1.default(url, {
         method: 'POST',
         headers: withSession({ 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }),

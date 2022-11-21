@@ -112,7 +112,6 @@ export const fetchCard = async (id : number, params: any) : Promise<any> => {
     ('parameters=' + encodeURIComponent(JSON.stringify(params))) :
     undefined
 
-  console.log(`fetching card ${id} params ${params}`)
   const resp = await fetch(url, { 
     method: 'POST',
     headers: withSession({ 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }),

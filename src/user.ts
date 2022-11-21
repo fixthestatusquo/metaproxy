@@ -1,4 +1,3 @@
-//import fetch from 'node-fetch' // more tuning needed if running on node < 18.
 import {request, httpLink} from '@proca/api'
 import * as proca from './proca'
 
@@ -30,8 +29,6 @@ export const fetchUser = async (auth : string) => {
 export const allowParams = (user : UserData | undefined, params : Record<string, any>) : boolean => {
   if ('org_id' in params) {
     if (!user) return false
-    console.log(parseInt(params['org_id']))
-    console.log(user.orgIds)
     const org_id = parseInt(params['org_id'])
     if (user.orgIds.indexOf(org_id) < 0) {
       return false
