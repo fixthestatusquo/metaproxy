@@ -6,6 +6,7 @@
   "main": "src/index.ts",
   "license": "MIT",
   "scripts": {
+    "build": "echo 'done'",
     "start": "node bin/metaproxy.mjs"
   },
   "bin": {
