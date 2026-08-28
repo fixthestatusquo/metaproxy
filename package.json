@@ -12,7 +12,7 @@
     "metaproxy": "bin/metaproxy.mjs"
   },
   "engines": {
-    "node": ">=23.6.0"
+    "node": ">=v22.6.0"
   },
   "files": [
     "bin",
