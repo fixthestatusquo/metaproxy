@@ -1,12 +1,3 @@
-import fetch from 'node-fetch'
-import {basicAuth} from '@proca/api'
-
-// export const auth = basicAuth({
-//   username: process.env['METABASE_USERNAME'], 
-//   password: process.env['METABASE_PASSWORD']
-// })
-
-
 const COLLECTION = (process.env['METABASE_COLLECTION'] || '').split(',')
 
 export const apiUrl = (path:string) => {
@@ -16,21 +7,21 @@ export const apiUrl = (path:string) => {
 type Session = {
   id: string | undefined
 }
-const session : Session = {id:undefined};
+const session : Session = { id: undefined };
 
-const withSession = (headers) => {
+const withSession = (headers: Record<string, string>) => {
   if (session.id) {
     return Object.assign(headers, { 'X-Metabase-Session': session.id })
-  } else { 
-    return headers 
+  } else {
+    return headers
   }
 }
 
-export const api = async (method : 'GET' | 'POST', path:string, params: Record<string,number | string> = undefined) => {
+export const api = async (method: 'GET' | 'POST', path: string, params?: Record<string, number | string>): Promise<any> => {
   const url = apiUrl(path)
 
   const resp = await fetch(url, {
-    method: method,
+    method,
     headers: withSession({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(params)
   })
@@ -58,10 +49,7 @@ export const updateSession = () => {
   })
 }
 
-// CARD {"database":2,"native":{"template-tags":{"campaign_name":{"id":"5dd2c39a-7222-c46d-8de0-15efaffa1d98","name":"campaign_name","display-name":"Campaign name","type":"text","default":null}},"query":"SELECT * from \ncampaigns \n\n[[ WHERE name = {{campaign_name}}]]"},"type":"native"}
-// CARD {"type":"native","native":{"query":"SELECT * from \ncampaigns \n\n[[ WHERE {{campaign_name}}]]","template-tags":{"campaign_name":{"id":"5dd2c39a-7222-c46d-8de0-15efaffa1d98","name":"campaign_name","display-name":"Campaign name","type":"dimension","dimension":["field-id",63],"widget-type":"category","default":null}}},"database":2}
-
-export const getParametersInfo = async (cardId : number) => {
+export const getParametersInfo = async (cardId: number): Promise<Record<string, string>> => {
   const card = await api('GET', `/card/${cardId}`)
 
   const collection = card['collection']['slug']

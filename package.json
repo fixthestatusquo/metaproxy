@@ -1,47 +1,22 @@
 {
   "name": "@proca/metaproxy",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Metabase proxy that checks parameters vs Proca credentials",
-  "main": "index.js",
+  "type": "module",
+  "main": "src/index.ts",
   "license": "MIT",
-  "dependencies": {
-    "@proca/api": "^3.3.4",
-    "cors": "^2.8.5",
-    "@sentry/node": "^7.19.0",
-    "express": "^4.17.1",
-    "express-jwt": "^6.0.0",
-    "jwks-rsa": "^2.0.2",
-    "node-cache": "^5.1.2",
-    "node-fetch": "^2.6.1",
-    "typescript": "^4.2.3",
-    "urql-serialize-scalars-exchange": "^1.0.8"
-  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "prepublish": "yarn build",
-    "build": "npx tsc",
-    "watch": "npx tsc -w"
+    "start": "node bin/metaproxy.mjs"
   },
   "bin": {
-    "metaproxy": "bin/metaproxy"
+    "metaproxy": "bin/metaproxy.mjs"
   },
-  "engines" : {
-    "node" : ">=18.0.0"
+  "engines": {
+    "node": ">=23.6.0"
   },
   "files": [
     "bin",
-    "dist",
+    "src",
     "README.MD"
-  ],
-  "devDependencies": {
-    "@graphql-codegen/cli": "^2.13.12",
-    "@graphql-codegen/typed-document-node": "^2.3.7",
-    "@graphql-codegen/typescript": "^2.8.2",
-    "@graphql-codegen/typescript-operations": "^2.5.7",
-    "@types/cors": "^2.8.12",
-    "@types/graphql": "^14.5.0",
-    "@types/node-fetch": "^2.5.8",
-    "codegen-graphql-scalar-locations": "^1.0.1-0",
-    "graphql": "15.5.0"
-  }
+  ]
 }
