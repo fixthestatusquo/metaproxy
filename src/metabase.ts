@@ -1,109 +1,132 @@
-const COLLECTION = (process.env['METABASE_COLLECTION'] || '').split(',')
+const COLLECTION = (process.env["METABASE_COLLECTION"] || "").split(",");
 
-export const apiUrl = (path:string) => {
-  return process.env['METABASE_URL'] + '/api' + path
-}
+export const apiUrl = (path: string) => {
+  return process.env["METABASE_URL"] + "/api" + path;
+};
 
 type Session = {
-  id: string | undefined
-}
-const session : Session = { id: undefined };
+  id: string | undefined;
+};
+const session: Session = { id: undefined };
 
 const withSession = (headers: Record<string, string>) => {
   if (session.id) {
-    return Object.assign(headers, { 'X-Metabase-Session': session.id })
+    return Object.assign(headers, { "X-Metabase-Session": session.id });
   } else {
-    return headers
+    return headers;
   }
-}
+};
 
-export const api = async (method: 'GET' | 'POST', path: string, params?: Record<string, number | string>): Promise<any> => {
-  const url = apiUrl(path)
+export const api = async (
+  method: "GET" | "POST",
+  path: string,
+  params?: Record<string, number | string>,
+): Promise<any> => {
+  const url = apiUrl(path);
 
   const resp = await fetch(url, {
     method,
-    headers: withSession({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify(params)
-  })
+    headers: withSession({ "Content-Type": "application/json" }),
+    body: JSON.stringify(params),
+  });
 
-  const body = await resp.text()
+  const body = await resp.text();
 
-  if (body[0] !== '{')
-    throw new Error(`Error reply: ${body}`)
+  if (body[0] !== "{") throw new Error(`Error reply: ${body}`);
 
-  return JSON.parse(body)
-}
+  return JSON.parse(body);
+};
 
 export const fetchSession = async () => {
-  return api('POST','/session', {
-    username: process.env['METABASE_USERNAME'], 
-    password: process.env['METABASE_PASSWORD']
-  })
+  return api("POST", "/session", {
+    username: process.env["METABASE_USERNAME"],
+    password: process.env["METABASE_PASSWORD"],
+  });
 };
 
 export const updateSession = () => {
-  return fetchSession().then(({id}) => {
-    const idstr = `${id}`
-    session.id = idstr
-    return idstr
-  })
-}
+  return fetchSession().then(({ id }) => {
+    const idstr = `${id}`;
+    session.id = idstr;
+    return idstr;
+  });
+};
 
-export const getParametersInfo = async (cardId: number): Promise<Record<string, string>> => {
-  const card = await api('GET', `/card/${cardId}`)
+export const getParametersInfo = async (
+  cardId: number,
+): Promise<Record<string, string>> => {
+  const card = await api("GET", `/card/${cardId}`);
 
-  const collection = card['collection']['slug']
+  const collection = card["collection"]["slug"];
 
   if (COLLECTION.indexOf(collection) < 0) {
-    console.error(`Forbidden access to collection ${collection}`)
+    console.error(`Forbidden access to collection ${collection}`);
 
-    throw new Error(`Forbidden access to collection ${collection}`)
+    throw new Error(`Forbidden access to collection ${collection}`);
   }
 
+  if (card["dataset_query"]["type"] !== "native") return {};
+  const parSpec = card["dataset_query"]["native"]["template-tags"];
 
-  if (card['dataset_query']['type'] !== 'native') return {}
-  const parSpec = card['dataset_query']['native']['template-tags']
-
-  const params = {}
+  const params = {};
 
   for (const [name, d] of Object.entries(parSpec)) {
-    params[name] = d['type']
+    params[name] = d["type"];
   }
   // type is dimension | text | number | date
 
-  return params
-}
+  return params;
+};
 
 // [{"type":"category","target":["variable",["template-tag","campaign_name"]],"value":"realgreendeal"}]
 // [{"type":"category","target":["dimension",["template-tag","campaign_name"]],"value":["belarus"]}]
-export const wrapParam = (name : string, value : string, type : string) => {
+export const wrapParam = (name: string, value: string, type: string) => {
   switch (type) {
-    case 'dimension': { 
-      return {type: 'category', target: ['dimension', ['template-tag', name]], value: [value]}
+    case "dimension": {
+      return {
+        type: "category",
+        target: ["dimension", ["template-tag", name]],
+        value: [value],
+      };
     }
-    case 'number':
-      return {type: 'category', target: ['variable', ['template-tag', name]], value: parseInt(value)}
-    case 'date':
-    case 'text': {
-      return {type: 'category', target: ['variable', ['template-tag', name]], value: value}
+    case "number":
+      return {
+        type: "category",
+        target: ["variable", ["template-tag", name]],
+        value: parseInt(value),
+      };
+    case "date":
+    case "text": {
+      return {
+        type: "category",
+        target: ["variable", ["template-tag", name]],
+        value: value,
+      };
     }
   }
-}
+};
 
 // card dataset_query:
 
+export const fetchCard = async (id: number, params: any): Promise<any> => {
+  const url = apiUrl(`/card/${id}/query/json`);
 
-export const fetchCard = async (id : number, params: any) : Promise<any> => {
-  const url = apiUrl(`/card/${id}/query/json`)
+  const body =
+    params && params.length > 0
+      ? "parameters=" + encodeURIComponent(JSON.stringify(params))
+      : undefined;
 
-  const body = params.length > 0 ? 
-    ('parameters=' + encodeURIComponent(JSON.stringify(params))) :
-    undefined
-
-  const resp = await fetch(url, { 
-    method: 'POST',
-    headers: withSession({ 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }),
-    body: body
-  })
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: withSession({
+      "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+    }),
+    body: body,
+  });
+  if (!resp.ok) {
+    throw new Error(
+      `Metabase query failed: ${resp.status} ${await resp.text()}`,
+    );
+  }
   return resp.json();
-}
+};
