@@ -16,7 +16,7 @@ It runs on **Node ≥ 23.6 natively — zero runtime dependencies and no build s
   - Any other parameter is passed through untouched.
 - **Collection allowlist** — `GET /card/:id` refuses to serve cards whose collection is not in `METABASE_COLLECTION`; access is rejected server-side before any query runs (`src/metabase.ts:getParametersInfo`).
 - **Typed parameter wrapping** — incoming query-string params are converted into Metabase's typed `template-tags` payload, correctly handling `dimension`, `number`, `text` and `date` (`src/metabase.ts:wrapParam`).
-- **Automatic session management** — logs into Metabase on startup and refreshes the session every 15 minutes (`src/index.ts` + `src/metabase.ts:fetchSession`/`updateSession`).
+- **API-key auth to Metabase** — authenticates with a static Metabase API key (`METABASE_KEY`), sent as the `X-API-Key` header on every request (`src/metabase.ts`). No login/session lifecycle to manage.
 - **TTL result caching** — card metadata and card results are cached in-memory for `CACHE_TIMEOUT` seconds (default `15`), keyed by card id (or card id + parameters).
 - **CORS** — defaults to `localhost:3000` and `localhost:3001`; override with a comma-separated `CORS_ORIGIN`.
 - **Zero runtime dependencies** — only Node's standard library at runtime.
@@ -44,8 +44,7 @@ All configuration is via environment variables:
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `METABASE_URL` | ✅ | — | Base URL of the Metabase instance, e.g. `https://metabase.yourdomain.com` |
-| `METABASE_USERNAME` | ✅ | — | Metabase login email |
-| `METABASE_PASSWORD` | ✅ | — | Metabase password |
+| `METABASE_KEY` | ✅ | — | Metabase API key, sent as the `X-API-Key` header. Create one under *Admin settings → Authentication → API keys* |
 | `PROCA_URL` | | `https://api.proca.app` | Proca GraphQL API endpoint used to resolve the user |
 | `JWKS_URL` | | — | (reserved) URL of a `jwks.json` for token verification |
 | `CORS_ORIGIN` | | `http://localhost:3000,http://localhost:3001` | Comma-separated list of allowed origins |

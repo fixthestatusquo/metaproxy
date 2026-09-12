@@ -2,7 +2,7 @@ import http from "http";
 import type { ServerResponse, IncomingMessage } from "http";
 import { URL } from "url";
 import { Cache } from "./cache.ts";
-import { api, updateSession, getParametersInfo, wrapParam, fetchCard } from "./metabase.ts";
+import { getParametersInfo, wrapParam, fetchCard } from "./metabase.ts";
 import { fetchUser, allowParams, type UserData } from "./user.ts";
 
 interface Context {
@@ -14,8 +14,7 @@ const cacheTimeout = parseInt(process.env["CACHE_TIMEOUT"] || "15");
 
 for (const v of [
   "METABASE_URL",
-  "METABASE_USERNAME",
-  "METABASE_PASSWORD",
+  "METABASE_KEY",
   "METABASE_COLLECTION",
 ]) {
   if (!process.env[v]) throw new Error(`Set ${v}`);
@@ -133,11 +132,6 @@ async function handleCard(
 }
 
 const appPort = process.env["PORT"] || 4040;
-
-updateSession().catch((e) => console.error(e));
-const cron = setInterval(() => {
-  updateSession();
-}, 1000 * 60 * 15);
 
 server.listen(appPort, () => {
   console.log(`Started server at port ${appPort}`);

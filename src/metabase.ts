@@ -4,17 +4,10 @@ export const apiUrl = (path: string) => {
   return process.env["METABASE_URL"] + "/api" + path;
 };
 
-type Session = {
-  id: string | undefined;
-};
-const session: Session = { id: undefined };
-
-const withSession = (headers: Record<string, string>) => {
-  if (session.id) {
-    return Object.assign(headers, { "X-Metabase-Session": session.id });
-  } else {
-    return headers;
-  }
+// Authenticates to Metabase with a static API key (env METABASE_KEY),
+// sent as the X-API-Key header on every request.
+const withApiKey = (headers: Record<string, string>) => {
+  return Object.assign(headers, { "X-API-Key": process.env["METABASE_KEY"] });
 };
 
 export const api = async (
@@ -26,7 +19,7 @@ export const api = async (
 
   const resp = await fetch(url, {
     method,
-    headers: withSession({ "Content-Type": "application/json" }),
+    headers: withApiKey({ "Content-Type": "application/json" }),
     body: JSON.stringify(params),
   });
 
@@ -35,21 +28,6 @@ export const api = async (
   if (body[0] !== "{") throw new Error(`Error reply: ${body}`);
 
   return JSON.parse(body);
-};
-
-export const fetchSession = async () => {
-  return api("POST", "/session", {
-    username: process.env["METABASE_USERNAME"],
-    password: process.env["METABASE_PASSWORD"],
-  });
-};
-
-export const updateSession = () => {
-  return fetchSession().then(({ id }) => {
-    const idstr = `${id}`;
-    session.id = idstr;
-    return idstr;
-  });
 };
 
 export const getParametersInfo = async (
@@ -118,7 +96,7 @@ export const fetchCard = async (id: number, params: any): Promise<any> => {
 
   const resp = await fetch(url, {
     method: "POST",
-    headers: withSession({
+    headers: withApiKey({
       "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
     }),
     body: body,
