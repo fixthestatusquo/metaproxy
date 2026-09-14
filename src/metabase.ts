@@ -30,9 +30,19 @@ export const api = async (
   return JSON.parse(body);
 };
 
+// Descriptor for one template-tag on a card. Retains the tag's declared type
+// and, for field filters, the field reference needed to build a valid target.
+export type TagInfo = {
+  type: string;
+  displayName?: string;
+  required?: boolean;
+  // Present for `dimension` (field filter) tags: ["field", id, {...}]
+  fieldRef?: any;
+};
+
 export const getParametersInfo = async (
   cardId: number,
-): Promise<Record<string, string>> => {
+): Promise<Record<string, TagInfo>> => {
   const card = await api("GET", `/card/${cardId}`);
 
   const collection = card["collection"]["slug"];
@@ -44,26 +54,37 @@ export const getParametersInfo = async (
   }
 
   if (card["dataset_query"]["type"] !== "native") return {};
-  const parSpec = card["dataset_query"]["native"]["template-tags"];
+  const parSpec = card["dataset_query"]["native"]["template-tags"] || {};
 
-  const params = {};
+  const params: Record<string, TagInfo> = {};
 
   for (const [name, d] of Object.entries(parSpec)) {
-    params[name] = d["type"];
+    const spec = d as any;
+    const info: TagInfo = { type: spec["type"] };
+    if (spec["display-name"] !== undefined) info.displayName = spec["display-name"];
+    if (spec["required"] !== undefined) info.required = !!spec["required"];
+    // Field filters carry the field reference we need for a valid target.
+    if (spec["dimension"] !== undefined) info.fieldRef = spec["dimension"];
+    params[name] = info;
   }
-  // type is dimension | text | number | date
 
   return params;
 };
 
 // [{"type":"category","target":["variable",["template-tag","campaign_name"]],"value":"realgreendeal"}]
-// [{"type":"category","target":["dimension",["template-tag","campaign_name"]],"value":["belarus"]}]
-export const wrapParam = (name: string, value: string, type: string) => {
+// [{"type":"category","target":["dimension",["field",1,null]],"value":["belarus"]}]
+export const wrapParam = (name: string, value: string, tag: TagInfo) => {
+  const type = tag.type;
   switch (type) {
     case "dimension": {
+      // Field filters need a field reference. Fall back to the template-tag
+      // form only if the card did not expose one.
+      const target = tag.fieldRef
+        ? ["dimension", tag.fieldRef]
+        : ["dimension", ["template-tag", name]];
       return {
         type: "category",
-        target: ["dimension", ["template-tag", name]],
+        target,
         value: [value],
       };
     }
@@ -81,6 +102,12 @@ export const wrapParam = (name: string, value: string, type: string) => {
         value: value,
       };
     }
+    default:
+      // Previously fell through to `undefined`, which JSON.stringify turned
+      // into `null` and Metabase rejected opaquely. Fail loudly instead.
+      throw new Error(
+        `Unsupported parameter type "${type}" for template-tag "${name}"`,
+      );
   }
 };
 

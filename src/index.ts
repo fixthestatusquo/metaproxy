@@ -2,8 +2,13 @@ import http from "http";
 import type { ServerResponse, IncomingMessage } from "http";
 import { URL } from "url";
 import { Cache } from "./cache.ts";
-import { getParametersInfo, wrapParam, fetchCard } from "./metabase.ts";
-import { fetchUser, allowParams, type UserData } from "./user.ts";
+import { getParametersInfo, wrapParam, fetchCard, type TagInfo } from "./metabase.ts";
+import {
+  authorizeParams,
+  resolveUser,
+  UserAuthError,
+  type UserData,
+} from "./user.ts";
 
 interface Context {
   user: UserData | null;
@@ -76,22 +81,20 @@ async function handleCard(
   };
 
   try {
-    // Authenticate (optional): reads the Authorization header, if present.
+    // Resolve the user when an Authorization header is present. A Proca
+    // failure is NOT treated as "anonymous": it is reported as an auth error
+    // so an expired token is distinguishable from a permission denial.
     let user: UserData | null = null;
     const auth = req.headers.authorization;
     if (auth) {
-      console.log("fetching user");
-      user = await fetchUser(auth);
+      user = await resolveUser(auth);
     }
 
     const query = Object.fromEntries(url.searchParams.entries());
-    if (!allowParams(user, query)) {
-      console.log(user, query);
-      return fail(400, "Error", "User not authorized to use this parameter");
+    const cardId = parseCardId(url.pathname);
+    if (cardId === null) {
+      return fail(400, "invalid_card_id", `Not a valid card id in ${url.pathname}`);
     }
-
-    const cardId = parseInt(url.pathname.split("/")[2]);
-    const cardParams: any[] = [];
 
     const key4info = `info-${cardId}`;
     let cardInfo = cache.get(key4info);
@@ -100,11 +103,36 @@ async function handleCard(
       cache.set(key4info, cardInfo, cacheTimeout);
     }
 
-    const names = Object.keys(cardInfo);
-    for (let i = 0; i < names.length; i++) {
-      const name = names[i];
-      const value = query[name] as string;
-      if (value) cardParams.push(wrapParam(name, value, cardInfo[name]));
+    const declaredTags = Object.keys(cardInfo);
+
+    // Authorize against the tags the card actually declares, so the parameter
+    // that is verified is exactly the one that will be sent to Metabase.
+    const authz = authorizeParams(user, declaredTags, query);
+    if (!authz.ok) {
+      console.log(`Authorize failed for card ${cardId}: ${authz.message}`);
+      return fail(authz.status, "Error", authz.message);
+    }
+
+    const cardParams: any[] = [];
+    for (const name of declaredTags) {
+      const info: TagInfo = cardInfo[name];
+      const raw = query[name];
+
+      if (raw === undefined || raw === "") {
+        // A required tag with no value would otherwise be forwarded as an
+        // empty parameter list and rejected by Metabase with an opaque
+        // "pick a value" error. Report which parameter is missing.
+        if (info.required) {
+          return fail(
+            400,
+            "missing_parameter",
+            `Missing required parameter "${name}"${info.displayName ? ` (${info.displayName})` : ""}`,
+          );
+        }
+        continue;
+      }
+
+      cardParams.push(wrapParam(name, raw, info));
     }
 
     console.log(
@@ -112,8 +140,15 @@ async function handleCard(
       JSON.stringify(cardParams, null, 2)
     );
 
-    // get data with caching
-    const key = JSON.stringify([cardId, Object.entries(cardParams).sort()]);
+    // get data with caching.
+    // The key covers the card AND every resolved parameter value, so an
+    // org-scoped result can never be served for a different org.
+    const key = JSON.stringify([
+      cardId,
+      cardParams
+        .map((p) => [p.target, p.value])
+        .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+    ]);
     let data: any = cache.get(key);
     if (data === undefined) {
       data = await fetchCard(cardId, cardParams);
@@ -127,9 +162,23 @@ async function handleCard(
     res.end(JSON.stringify(data));
   } catch (e) {
     const err = e as Error;
+    if (err instanceof UserAuthError) {
+      return fail(401, "unauthorized", err.message);
+    }
     return fail(400, err?.name || "error", err?.message || "generic error");
   }
 }
+
+// The card id is the path segment immediately after /card/. Strictly validated
+// so a malformed path yields a clear 400 instead of parseInt("card") -> NaN.
+const parseCardId = (pathname: string): number | null => {
+  const parts = pathname.split("/").filter((p) => p !== "");
+  const idx = parts.indexOf("card");
+  const seg = idx >= 0 ? parts[idx + 1] : undefined;
+  if (seg === undefined || !/^\d+$/.test(seg)) return null;
+  const n = Number(seg);
+  return Number.isSafeInteger(n) ? n : null;
+};
 
 const appPort = process.env["PORT"] || 4040;
 

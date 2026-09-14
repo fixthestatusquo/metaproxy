@@ -10,14 +10,15 @@ It runs on **Node ≥ 23.6 natively — zero runtime dependencies and no build s
 
 - **Metabase card proxy** — a single route, `GET /card/:id?<param>=<value>`, executes a Metabase native/SQL card with its template-tags and returns the JSON result as-is.
 - **Proca user auth** — reads the `Authorization` header (a Proca JWT) and resolves the user's email against Proca.
-- **Per-parameter access control** — a card query is only executed if the authenticated Proca user is allowed to use the requested parameters:
-  - `org_id` → the user must belong to that organisation (`src/user.ts:allowParams`).
+- **Per-parameter access control** — authorization is driven by the template-tags the *card* declares, so the parameter that is verified is exactly the one sent to Metabase:
+  - `org_id` → the value must parse as an integer and the user must belong to that organisation (`src/user.ts:authorizeParams`).
   - `org` → the user must belong to that organisation name.
+  - Requests using an org-scoped tag without a valid token get `401`; a valid token without the org gets `403`.
   - Any other parameter is passed through untouched.
 - **Collection allowlist** — `GET /card/:id` refuses to serve cards whose collection is not in `METABASE_COLLECTION`; access is rejected server-side before any query runs (`src/metabase.ts:getParametersInfo`).
 - **Typed parameter wrapping** — incoming query-string params are converted into Metabase's typed `template-tags` payload, correctly handling `dimension`, `number`, `text` and `date` (`src/metabase.ts:wrapParam`).
 - **API-key auth to Metabase** — authenticates with a static Metabase API key (`METABASE_KEY`), sent as the `X-API-Key` header on every request (`src/metabase.ts`). No login/session lifecycle to manage.
-- **TTL result caching** — card metadata and card results are cached in-memory for `CACHE_TIMEOUT` seconds (default `15`), keyed by card id (or card id + parameters).
+- **TTL result caching** — card metadata and card results are cached in-memory for `CACHE_TIMEOUT` seconds (default `15`), keyed by card id and the resolved parameter values (so an org-scoped result is never served for a different org).
 - **CORS** — defaults to `localhost:3000` and `localhost:3001`; override with a comma-separated `CORS_ORIGIN`.
 - **Zero runtime dependencies** — only Node's standard library at runtime.
 
