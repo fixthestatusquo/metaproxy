@@ -145,16 +145,33 @@ export const getParametersInfo = async (
     );
   }
 
-  if (datasetQuery["type"] !== "native") {
-    // A GUI/structured question has no template-tags to bind URL params to.
+  // Determine "is this a native/SQL card?" structurally rather than trusting
+  // dataset_query.type: newer Metabase versions may omit that discriminator
+  // (observed as `type=undefined` on v0.63), which previously made every card
+  // look non-native and silently drop all URL parameters.
+  const native = datasetQuery["native"];
+  const isNative =
+    datasetQuery["type"] === "native" ||
+    card["query_type"] === "native" ||
+    (native !== null && typeof native === "object") ||
+    // Some payloads surface template-tags directly on dataset_query.
+    (datasetQuery["template-tags"] !== undefined &&
+      typeof datasetQuery["template-tags"] === "object");
+
+  if (!isNative) {
     console.warn(
-      `Card ${cardId} is not a native query (type=${datasetQuery["type"]}); ` +
+      `Card ${cardId} is not a native query ` +
+        `(dataset_query.type=${JSON.stringify(datasetQuery["type"])}, ` +
+        `query_type=${JSON.stringify(card["query_type"])}); ` +
         `it declares no template-tags, so URL parameters cannot be applied`,
     );
     return {};
   }
 
-  const parSpec = datasetQuery["native"]?.["template-tags"] || {};
+  const parSpec: Record<string, any> =
+    (native && typeof native === "object" && native["template-tags"]) ||
+    datasetQuery["template-tags"] ||
+    {};
 
   const params: Record<string, TagInfo> = {};
 
