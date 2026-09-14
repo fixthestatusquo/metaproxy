@@ -2,7 +2,14 @@ import http from "http";
 import type { ServerResponse, IncomingMessage } from "http";
 import { URL } from "url";
 import { Cache } from "./cache.ts";
-import { getParametersInfo, wrapParam, fetchCard, type TagInfo } from "./metabase.ts";
+import {
+  getParametersInfo,
+  wrapParam,
+  fetchCard,
+  initAuth,
+  updateSession,
+  type TagInfo,
+} from "./metabase.ts";
 import {
   authorizeParams,
   resolveUser,
@@ -17,12 +24,22 @@ interface Context {
 const cache = new Cache();
 const cacheTimeout = parseInt(process.env["CACHE_TIMEOUT"] || "15");
 
-for (const v of [
-  "METABASE_URL",
-  "METABASE_KEY",
-  "METABASE_COLLECTION",
-]) {
+for (const v of ["METABASE_URL", "METABASE_COLLECTION"]) {
   if (!process.env[v]) throw new Error(`Set ${v}`);
+}
+
+// Auth: this Metabase (v0.46) predates API keys, so username/password is the
+// default. METABASE_KEY is only used when explicitly set (Metabase >= v0.49).
+const usingApiKey = Boolean(process.env["METABASE_KEY"]);
+if (!usingApiKey) {
+  for (const v of ["METABASE_USERNAME", "METABASE_PASSWORD"]) {
+    if (!process.env[v]) {
+      throw new Error(
+        `Set ${v} (or METABASE_KEY on Metabase >= v0.49). ` +
+          `Metabase v0.46 has no API-key support.`,
+      );
+    }
+  }
 }
 
 const allowedOrigins = process.env.CORS_ORIGIN
@@ -181,6 +198,27 @@ const parseCardId = (pathname: string): number | null => {
 };
 
 const appPort = process.env["PORT"] || 4040;
+
+// Verify Metabase auth before accepting requests, so a bad credential is a
+// startup failure rather than a per-request "card has no dataset_query".
+try {
+  const mode = await initAuth();
+  console.log(`Metabase auth OK (${mode})`);
+} catch (e) {
+  console.error(
+    `Metabase authentication FAILED: ${(e as Error).message}\n` +
+      `The proxy will start but every card request will fail until this is fixed.`,
+  );
+}
+
+if (!usingApiKey) {
+  // Metabase sessions expire; refresh well within the default lifetime.
+  setInterval(() => {
+    updateSession().catch((e: unknown) =>
+      console.error("Metabase session refresh failed", (e as Error).message),
+    );
+  }, 1000 * 60 * 15);
+}
 
 server.listen(appPort, () => {
   console.log(`Started server at port ${appPort}`);
