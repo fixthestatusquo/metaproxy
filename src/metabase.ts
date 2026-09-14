@@ -45,7 +45,22 @@ export const getParametersInfo = async (
 ): Promise<Record<string, TagInfo>> => {
   const card = await api("GET", `/card/${cardId}`);
 
-  const collection = card["collection"]["slug"];
+  // A card the API key cannot fully read comes back without dataset_query (or
+  // with it redacted). Previously this fell through to `return {}`, which made
+  // the card look parameterless and produced a silent, hard-to-diagnose 400.
+  if (!card || typeof card !== "object") {
+    throw new Error(
+      `Metabase returned no card for id ${cardId} (check METABASE_KEY permissions)`,
+    );
+  }
+
+  const collection = card["collection"]?.["slug"];
+  if (collection === undefined) {
+    throw new Error(
+      `Card ${cardId} has no collection.slug in the API response; ` +
+        `METABASE_KEY may lack read access to this card's collection`,
+    );
+  }
 
   if (COLLECTION.indexOf(collection) < 0) {
     console.error(`Forbidden access to collection ${collection}`);
@@ -53,19 +68,43 @@ export const getParametersInfo = async (
     throw new Error(`Forbidden access to collection ${collection}`);
   }
 
-  if (card["dataset_query"]["type"] !== "native") return {};
-  const parSpec = card["dataset_query"]["native"]["template-tags"] || {};
+  const datasetQuery = card["dataset_query"];
+  if (!datasetQuery || typeof datasetQuery !== "object") {
+    throw new Error(
+      `Card ${cardId} response has no dataset_query; ` +
+        `METABASE_KEY likely lacks permission to read the card definition`,
+    );
+  }
+
+  if (datasetQuery["type"] !== "native") {
+    // A GUI/structured question has no template-tags to bind URL params to.
+    console.warn(
+      `Card ${cardId} is not a native query (type=${datasetQuery["type"]}); ` +
+        `it declares no template-tags, so URL parameters cannot be applied`,
+    );
+    return {};
+  }
+
+  const parSpec = datasetQuery["native"]?.["template-tags"] || {};
 
   const params: Record<string, TagInfo> = {};
 
   for (const [name, d] of Object.entries(parSpec)) {
     const spec = d as any;
     const info: TagInfo = { type: spec["type"] };
-    if (spec["display-name"] !== undefined) info.displayName = spec["display-name"];
+    if (spec["display-name"] !== undefined)
+      info.displayName = spec["display-name"];
     if (spec["required"] !== undefined) info.required = !!spec["required"];
     // Field filters carry the field reference we need for a valid target.
     if (spec["dimension"] !== undefined) info.fieldRef = spec["dimension"];
     params[name] = info;
+  }
+
+  if (Object.keys(params).length === 0) {
+    console.warn(
+      `Card ${cardId} (collection=${collection}) declares no template-tags; ` +
+        `no URL parameters will be applied`,
+    );
   }
 
   return params;
