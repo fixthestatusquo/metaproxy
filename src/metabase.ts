@@ -105,6 +105,8 @@ export type TagInfo = {
   type: string;
   displayName?: string;
   required?: boolean;
+  // The template-tag's UUID, used as the parameter `id` when known.
+  dimensionId?: string;
   // Present for `dimension` (field filter) tags: ["field", id, {...}]
   fieldRef?: any;
 };
@@ -223,6 +225,9 @@ export const getParametersInfo = async (
     else if (spec["name"] !== undefined && spec["display-name"] === undefined)
       info.displayName = spec["name"];
     if (spec["required"] !== undefined) info.required = !!spec["required"];
+    if (typeof spec["id"] === "string" && spec["id"] !== "") {
+      info.dimensionId = spec["id"];
+    }
     // Field filters carry the field reference we need for a valid target.
     if (spec["dimension"] !== undefined) info.fieldRef = spec["dimension"];
     else if (spec["fieldRef"] !== undefined) info.fieldRef = spec["fieldRef"];
@@ -254,22 +259,31 @@ const NON_CARD_PARAMS = new Set([
 export const isNonCardParam = (name: string): boolean =>
   NON_CARD_PARAMS.has(name);
 
-// [{"type":"category","target":["variable",["template-tag","campaign_name"]],"value":"realgreendeal"}]
-// [{"type":"category","target":["dimension",["field",1,null]],"value":["belarus"]}]
+// Metabase parameter objects. The `id` key is required by newer Metabase
+// versions (v0.63 rejects a parameter without it, reporting
+// "parameters[0].id: missing required key, received: nil"), and is accepted
+// and ignored by older ones, so it is always included.
+//
+// [{"id":"campaign_name","type":"category","target":["variable",["template-tag","campaign_name"]],"value":"realgreendeal"}]
+// [{"id":"campaign_name","type":"category","target":["dimension",["field",1,null]],"value":["belarus"]}]
 export const wrapParam = (name: string, value: string, tag?: TagInfo) => {
   const type = tag?.type;
+  // The template-tag's UUID is the canonical `id` when known; the tag name is
+  // accepted too and is all that is available in fallback mode.
+  const id = (tag as any)?.dimensionId ?? name;
   switch (type) {
     case "dimension": {
       const target = tag?.fieldRef
         ? ["dimension", tag.fieldRef]
         : ["dimension", ["template-tag", name]];
-      return { type: "category", target, value: [value] };
+      return { id, type: "category", target, value: [value] };
     }
     case "number": {
       // Send a real number when the value is integral; otherwise pass the
       // string through so Metabase reports a meaningful error rather than NaN.
       const n = /^-?\d+$/.test(value) ? parseInt(value, 10) : value;
       return {
+        id,
         type: "category",
         target: ["variable", ["template-tag", name]],
         value: n,
@@ -278,6 +292,7 @@ export const wrapParam = (name: string, value: string, tag?: TagInfo) => {
     case "date":
     case "text":
       return {
+        id,
         type: "category",
         target: ["variable", ["template-tag", name]],
         value: value,
@@ -289,6 +304,7 @@ export const wrapParam = (name: string, value: string, tag?: TagInfo) => {
       // text/number/date cases. Field filters (`dimension`) cannot be encoded
       // without their field reference and will be rejected by Metabase.
       return {
+        id,
         type: "category",
         target: ["variable", ["template-tag", name]],
         value: value,

@@ -191,6 +191,11 @@ async function handleCard(
     res.end(JSON.stringify(data));
   } catch (e) {
     const err = e as Error;
+    // Log every failure. Previously errors were only returned to the client,
+    // so a failing request left nothing in the server log.
+    console.error(
+      `Card request failed for ${url.pathname}${url.search}: ${err?.name}: ${err?.message}`,
+    );
     if (err instanceof UserAuthError) {
       return fail(401, "unauthorized", err.message);
     }
