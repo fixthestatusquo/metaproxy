@@ -109,14 +109,22 @@ export type TagInfo = {
   fieldRef?: any;
 };
 
+/**
+ * Reads a card's parameter metadata.
+ *
+ * Returns a map of tag name -> descriptor. An empty object means "no tags could
+ * be determined", which the caller treats as unknown rather than as a card with
+ * genuinely no parameters; see applyCardParams for how that is handled.
+ *
+ * Returns null when the card definition could not be read at all (permissions,
+ * non-native card, or an unrecognised payload shape), so the caller can fall
+ * back to optimistic encoding instead of dropping every parameter.
+ */
 export const getParametersInfo = async (
   cardId: number,
-): Promise<Record<string, TagInfo>> => {
+): Promise<Record<string, TagInfo> | null> => {
   const card = await api("GET", `/card/${cardId}`);
 
-  // A card the API key cannot fully read comes back without dataset_query (or
-  // with it redacted). Previously this fell through to `return {}`, which made
-  // the card look parameterless and produced a silent, hard-to-diagnose 400.
   if (!card || typeof card !== "object") {
     throw new Error(
       `Metabase returned no card for id ${cardId} (check METABASE_KEY permissions)`,
@@ -139,94 +147,152 @@ export const getParametersInfo = async (
 
   const datasetQuery = card["dataset_query"];
   if (!datasetQuery || typeof datasetQuery !== "object") {
-    throw new Error(
-      `Card ${cardId} response has no dataset_query; ` +
-        `METABASE_KEY likely lacks permission to read the card definition`,
-    );
-  }
-
-  // Determine "is this a native/SQL card?" structurally rather than trusting
-  // dataset_query.type: newer Metabase versions may omit that discriminator
-  // (observed as `type=undefined` on v0.63), which previously made every card
-  // look non-native and silently drop all URL parameters.
-  const native = datasetQuery["native"];
-  const isNative =
-    datasetQuery["type"] === "native" ||
-    card["query_type"] === "native" ||
-    (native !== null && typeof native === "object") ||
-    // Some payloads surface template-tags directly on dataset_query.
-    (datasetQuery["template-tags"] !== undefined &&
-      typeof datasetQuery["template-tags"] === "object");
-
-  if (!isNative) {
     console.warn(
-      `Card ${cardId} is not a native query ` +
-        `(dataset_query.type=${JSON.stringify(datasetQuery["type"])}, ` +
-        `query_type=${JSON.stringify(card["query_type"])}); ` +
-        `it declares no template-tags, so URL parameters cannot be applied`,
+      `Card ${cardId}: no dataset_query in the API response ` +
+        `(METABASE_KEY may lack permission to read the card definition). ` +
+        `Falling back to optimistic parameter encoding.`,
     );
-    return {};
+    return null;
   }
 
-  const parSpec: Record<string, any> =
-    (native && typeof native === "object" && native["template-tags"]) ||
-    datasetQuery["template-tags"] ||
-    {};
+  // Locate the template-tags. Different Metabase versions nest these
+  // differently, so look in every known position before giving up.
+  const native = datasetQuery["native"];
+  const tagSources: Array<[string, any]> = [
+    ["dataset_query.native.template-tags", native?.["template-tags"]],
+    ["dataset_query.template-tags", datasetQuery["template-tags"]],
+    ["card.template-tags", card["template-tags"]],
+    ["card.parameters", card["parameters"]],
+  ];
+
+  let tags: Record<string, any> | undefined;
+  let source = "";
+  for (const [where, candidate] of tagSources) {
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+      tags = candidate;
+      source = where;
+      break;
+    }
+    if (Array.isArray(candidate)) {
+      // `parameters` is sometimes a list of {name, ...} objects.
+      const asMap: Record<string, any> = {};
+      for (const p of candidate) {
+        if (p && typeof p === "object" && typeof p["name"] === "string") {
+          asMap[p["name"]] = p;
+        }
+      }
+      if (Object.keys(asMap).length > 0) {
+        tags = asMap;
+        source = where;
+        break;
+      }
+    }
+  }
+
+  if (!tags || Object.keys(tags).length === 0) {
+    const isNative =
+      datasetQuery["type"] === "native" || card["query_type"] === "native";
+
+    if (!isNative) {
+      console.warn(
+        `Card ${cardId} is not a native query ` +
+          `(dataset_query.type=${JSON.stringify(datasetQuery["type"])}, ` +
+          `query_type=${JSON.stringify(card["query_type"])}); ` +
+          `it declares no template-tags, so URL parameters cannot be applied`,
+      );
+      return {};
+    }
+
+    // Native card but we could not find its tags. Do not assume it has none:
+    // that would silently drop every parameter. Signal "unknown" instead.
+    console.warn(
+      `Card ${cardId} is a native query but no template-tags were found in ` +
+        `the API response (looked in: ${tagSources.map(([w]) => w).join(", ")}). ` +
+        `Falling back to optimistic parameter encoding.`,
+    );
+    return null;
+  }
 
   const params: Record<string, TagInfo> = {};
-
-  for (const [name, d] of Object.entries(parSpec)) {
+  for (const [name, d] of Object.entries(tags)) {
     const spec = d as any;
     const info: TagInfo = { type: spec["type"] };
-    if (spec["display-name"] !== undefined)
-      info.displayName = spec["display-name"];
+    if (spec["display-name"] !== undefined) info.displayName = spec["display-name"];
+    else if (spec["display_name"] !== undefined)
+      info.displayName = spec["display_name"];
+    else if (spec["name"] !== undefined && spec["display-name"] === undefined)
+      info.displayName = spec["name"];
     if (spec["required"] !== undefined) info.required = !!spec["required"];
     // Field filters carry the field reference we need for a valid target.
     if (spec["dimension"] !== undefined) info.fieldRef = spec["dimension"];
+    else if (spec["fieldRef"] !== undefined) info.fieldRef = spec["fieldRef"];
     params[name] = info;
   }
 
-  if (Object.keys(params).length === 0) {
-    console.warn(
-      `Card ${cardId} (collection=${collection}) declares no template-tags; ` +
-        `no URL parameters will be applied`,
-    );
-  }
+  console.debug(
+    `Card ${cardId}: read ${Object.keys(params).length} template-tag(s) from ${source}`,
+  );
 
   return params;
 };
 
+// Query-string keys that are never Metabase card parameters. Sending these to
+// Metabase makes it reject the whole request with
+// "Invalid parameter: Card N does not have a template tag named ...".
+const NON_CARD_PARAMS = new Set([
+  "queryId",
+  "queryid",
+  "title",
+  "cardId",
+  "cardid",
+  "display",
+  "format",
+  "callback",
+  "_",
+]);
+
+export const isNonCardParam = (name: string): boolean =>
+  NON_CARD_PARAMS.has(name);
+
 // [{"type":"category","target":["variable",["template-tag","campaign_name"]],"value":"realgreendeal"}]
 // [{"type":"category","target":["dimension",["field",1,null]],"value":["belarus"]}]
-export const wrapParam = (name: string, value: string, tag: TagInfo) => {
-  const type = tag.type;
+export const wrapParam = (name: string, value: string, tag?: TagInfo) => {
+  const type = tag?.type;
   switch (type) {
     case "dimension": {
-      // Field filters need a field reference. Fall back to the template-tag
-      // form only if the card did not expose one.
-      const target = tag.fieldRef
+      const target = tag?.fieldRef
         ? ["dimension", tag.fieldRef]
         : ["dimension", ["template-tag", name]];
-      return {
-        type: "category",
-        target,
-        value: [value],
-      };
+      return { type: "category", target, value: [value] };
     }
-    case "number":
+    case "number": {
+      // Send a real number when the value is integral; otherwise pass the
+      // string through so Metabase reports a meaningful error rather than NaN.
+      const n = /^-?\d+$/.test(value) ? parseInt(value, 10) : value;
       return {
         type: "category",
         target: ["variable", ["template-tag", name]],
-        value: parseInt(value),
+        value: n,
       };
+    }
     case "date":
-    case "text": {
+    case "text":
       return {
         type: "category",
         target: ["variable", ["template-tag", name]],
         value: value,
       };
-    }
+    case undefined:
+      // No metadata available (card definition unreadable). Encode optimistically
+      // as a template-tag variable with a string value: Metabase accepts string
+      // values for number tags too (verified), so this works for the common
+      // text/number/date cases. Field filters (`dimension`) cannot be encoded
+      // without their field reference and will be rejected by Metabase.
+      return {
+        type: "category",
+        target: ["variable", ["template-tag", name]],
+        value: value,
+      };
     default:
       // Previously fell through to `undefined`, which JSON.stringify turned
       // into `null` and Metabase rejected opaquely. Fail loudly instead.
@@ -234,6 +300,46 @@ export const wrapParam = (name: string, value: string, tag: TagInfo) => {
         `Unsupported parameter type "${type}" for template-tag "${name}"`,
       );
   }
+};
+
+/**
+ * Builds the Metabase parameter payload for a request.
+ *
+ * When `cardInfo` is available (non-null) only tags the card declares are sent,
+ * using their declared types. When it is null the card definition could not be
+ * read, so every query-string parameter that is not a known non-card key is
+ * sent optimistically.
+ *
+ * Returns null if a *known* required tag has no value, which the caller reports
+ * as a missing_parameter error rather than forwarding an empty parameter list.
+ */
+export const buildCardParams = (
+  query: Record<string, string>,
+  cardInfo: Record<string, TagInfo> | null,
+): { params: any[]; assumed: boolean } | { missing: TagInfo & { name: string } } => {
+  const params: any[] = [];
+
+  if (cardInfo === null) {
+    // Optimistic mode: trust the query string.
+    for (const [name, raw] of Object.entries(query)) {
+      if (raw === undefined || raw === "") continue;
+      if (isNonCardParam(name)) continue;
+      params.push(wrapParam(name, raw, undefined));
+    }
+    return { params, assumed: true };
+  }
+
+  for (const [name, info] of Object.entries(cardInfo)) {
+    const raw = query[name];
+    if (raw === undefined || raw === "") {
+      if (info.required) {
+        return { missing: { ...info, name } };
+      }
+      continue;
+    }
+    params.push(wrapParam(name, raw, info));
+  }
+  return { params, assumed: false };
 };
 
 // card dataset_query:

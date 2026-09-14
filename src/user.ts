@@ -99,12 +99,22 @@ export const parseOrgId = (value: unknown): number | null => {
 // parameter that is checked is exactly the one that will be sent to Metabase.
 // A tag named something other than org_id/org cannot bypass the check, because
 // we resolve each declared tag down to its semantic role here.
+//
+// `declaredTags` is empty when the card definition could not be read (the proxy
+// then encodes every query-string parameter optimistically). In that case the
+// checks fall back to the raw query string, so an org-scoped parameter is still
+// verified rather than silently passed through unchecked.
 export const authorizeParams = (
   user: UserData | undefined | null,
   declaredTags: readonly string[],
   params: Record<string, any>,
 ): AuthResult => {
-  for (const name of declaredTags) {
+  const names: readonly string[] =
+    declaredTags.length > 0
+      ? declaredTags
+      : [ORG_ID_PARAM, ORG_NAME_PARAM];
+
+  for (const name of names) {
     const isOrgId = name === ORG_ID_PARAM;
     const isOrgName = name === ORG_NAME_PARAM;
     if (!isOrgId && !isOrgName) continue;

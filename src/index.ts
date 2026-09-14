@@ -4,11 +4,10 @@ import { URL } from "url";
 import { Cache } from "./cache.ts";
 import {
   getParametersInfo,
-  wrapParam,
+  buildCardParams,
   fetchCard,
   initAuth,
   updateSession,
-  type TagInfo,
 } from "./metabase.ts";
 import {
   authorizeParams,
@@ -120,7 +119,9 @@ async function handleCard(
       cache.set(key4info, cardInfo, cacheTimeout);
     }
 
-    const declaredTags = Object.keys(cardInfo);
+    // cardInfo is null when the card definition could not be read; in that case
+    // every query-string parameter is encoded optimistically.
+    const declaredTags = cardInfo === null ? [] : Object.keys(cardInfo);
 
     // Authorize against the tags the card actually declares, so the parameter
     // that is verified is exactly the one that will be sent to Metabase.
@@ -130,26 +131,23 @@ async function handleCard(
       return fail(authz.status, "Error", authz.message);
     }
 
-    const cardParams: any[] = [];
-    for (const name of declaredTags) {
-      const info: TagInfo = cardInfo[name];
-      const raw = query[name];
+    const built = buildCardParams(query, cardInfo);
+    if ("missing" in built) {
+      return fail(
+        400,
+        "missing_parameter",
+        `Missing required parameter "${built.missing.name}"` +
+          (built.missing.displayName ? ` (${built.missing.displayName})` : ""),
+      );
+    }
+    const cardParams = built.params;
 
-      if (raw === undefined || raw === "") {
-        // A required tag with no value would otherwise be forwarded as an
-        // empty parameter list and rejected by Metabase with an opaque
-        // "pick a value" error. Report which parameter is missing.
-        if (info.required) {
-          return fail(
-            400,
-            "missing_parameter",
-            `Missing required parameter "${name}"${info.displayName ? ` (${info.displayName})` : ""}`,
-          );
-        }
-        continue;
-      }
-
-      cardParams.push(wrapParam(name, raw, info));
+    if (built.assumed) {
+      console.warn(
+        `Card ${cardId}: card definition unreadable, sending ${cardParams.length} ` +
+          `parameter(s) optimistically as template-tag variables: ` +
+          `${cardParams.map((p: any) => p.target?.[1]?.[1]).join(", ") || "(none)"}`,
+      );
     }
 
     console.log(
@@ -163,8 +161,10 @@ async function handleCard(
     const key = JSON.stringify([
       cardId,
       cardParams
-        .map((p) => [p.target, p.value])
-        .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+        .map((p: any) => [p.target, p.value])
+        .sort((a: any, b: any) =>
+          JSON.stringify(a).localeCompare(JSON.stringify(b)),
+        ),
     ]);
     let data: any = cache.get(key);
     if (data === undefined) {
