@@ -36,6 +36,10 @@ Runs Metabase card `:id` (must belong to an allowed collection) with the given q
 
 **Response:** `200` with the card's JSON result; `400` with `{ "error", "message" }` on failure (e.g. forbidden collection, unauthenticated org param).
 
+### `GET /snowflake/check/campaign`
+
+### `POST /snowflake/upload/campaign`
+
 ---
 
 ## Configuration
