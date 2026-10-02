@@ -16,6 +16,9 @@ import {
   type UserData,
 } from "./user.ts";
 
+import {handleSnowflake} from "./snowflake.ts";
+
+
 interface Context {
   user: UserData | null;
 }
@@ -69,6 +72,11 @@ const server = http.createServer(async (req: IncomingMessage, res: ServerRespons
       "Access-Control-Max-Age": "86400",
     });
     res.end();
+    return;
+  }
+
+  if (url.pathname.startsWith("/snowflake/")) {
+    handleSnowflake(req, res, url);
     return;
   }
 
