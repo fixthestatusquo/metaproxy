@@ -23,6 +23,10 @@ interface Context {
   user: UserData | null;
 }
 
+if (!process.env["METABASE_URL"]) {
+  console.log("loading from .env");
+  process.loadEnvFile();
+}
 const cache = new Cache();
 const cacheTimeout = parseInt(process.env["CACHE_TIMEOUT"] || "15");
 

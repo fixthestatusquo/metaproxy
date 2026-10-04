@@ -45,7 +45,7 @@ export async function handleSnowflake(
     const query = Object.fromEntries(url.searchParams.entries());
     const {action,campaign} = parseCampaign(url.pathname);
 
-    const data = await fetchCampaign (campaign, {local: true, save:false});
+    const data = await fetchCampaign (campaign, {local: false, save:false});
 
     if (action === "check") {
     res.writeHead(200, {
@@ -56,12 +56,12 @@ export async function handleSnowflake(
     }
     if (action === "upload") {
       const keys = await upload(campaign, data.content);
-console.log(keys);
     res.writeHead(200, {
       ...corsHeaders(origin),
       "Content-Type": "application/json",
     });
-      return res.end(JSON.stringify({ analysis: data.analysis, keys, content: data.content }));
+      if (keys.errors) return data;
+      return res.end(JSON.stringify({ ...data, keys}));
     }
 
       

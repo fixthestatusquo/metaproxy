@@ -19,5 +19,8 @@
     "bin",
     "src",
     "README.MD"
-  ]
+  ],
+  "dependencies": {
+    "snowflake": "github:fixthestatusquo/snowflake_engine"
+  }
 }
