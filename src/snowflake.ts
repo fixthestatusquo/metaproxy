@@ -5,12 +5,10 @@ import {
   type UserData,
 } from "./user.ts";
 
-import {fetchCampaign} from "snowflake/fetch.js";
-import  { upload } from 'snowflake/upload.js';
+import { fetchCampaign } from "snowflake/fetch.js";
+import { upload } from "snowflake/upload.js";
 
-const corsHeaders = (
-  origin: string | undefined
-): Record<string, string> => {
+const corsHeaders = (origin: string | undefined): Record<string, string> => {
   if (origin && allowedOrigins.indexOf(origin) >= 0) {
     return { "Access-Control-Allow-Origin": origin, Vary: "Origin" };
   }
@@ -20,7 +18,7 @@ const corsHeaders = (
 export async function handleSnowflake(
   req: IncomingMessage,
   res: ServerResponse,
-  url: URL
+  url: URL,
 ): Promise<void> {
   const origin = req.headers.origin;
 
@@ -32,7 +30,6 @@ export async function handleSnowflake(
     res.end(JSON.stringify({ error: name, message }));
   };
 
-
   try {
     // Resolve the user when an Authorization header is present. A Proca
     // failure is NOT treated as "anonymous": it is reported as an auth error
@@ -43,29 +40,27 @@ export async function handleSnowflake(
       user = await resolveUser(auth);
     }
     const query = Object.fromEntries(url.searchParams.entries());
-    const {action,campaign} = parseCampaign(url.pathname);
+    const { action, campaign } = parseCampaign(url.pathname);
 
-    const data = await fetchCampaign (campaign, {local: false, save:false});
-
+    const data = await fetchCampaign(campaign, { local: false, save: false });
+console.log(data);
     if (action === "check") {
-    res.writeHead(200, {
-      ...corsHeaders(origin),
-      "Content-Type": "application/json",
-    });
+      res.writeHead(200, {
+        ...corsHeaders(origin),
+        "Content-Type": "application/json",
+      });
       return res.end(JSON.stringify(data));
     }
     if (action === "upload") {
       const keys = await upload(campaign, data.content);
-    res.writeHead(200, {
-      ...corsHeaders(origin),
-      "Content-Type": "application/json",
-    });
-      return res.end(JSON.stringify({ ...data, keys}));
+      res.writeHead(200, {
+        ...corsHeaders(origin),
+        "Content-Type": "application/json",
+      });
+      return res.end(JSON.stringify({ ...data, keys }));
     }
 
-      
-      return res.end(JSON.stringify("action unkown", action));
-
+    return res.end(JSON.stringify("action unkown", action));
   } catch (e) {
     const err = e as Error;
     if (err instanceof UserAuthError) {
@@ -79,7 +74,5 @@ export async function handleSnowflake(
 // so a malformed path yields a clear 400
 const parseCampaign = (pathname: string): string | null => {
   const parts = pathname.split("/").filter((p) => p !== "");
-  return  { action: parts[1] || undefined, campaign: parts[2] || undefined};
+  return { action: parts[1] || undefined, campaign: parts[2] || undefined };
 };
-
-
