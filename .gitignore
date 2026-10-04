@@ -1,5 +1,6 @@
 *.swp
 test.*
+*.swp
 node_modules
 dist
 .envrc
