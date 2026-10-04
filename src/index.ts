@@ -121,6 +121,7 @@ async function handleCard(
     const query = Object.fromEntries(url.searchParams.entries());
     const cardId = parseCardId(url.pathname);
     if (cardId === null) {
+      console.warn(`bad card id in ${url.pathname}`);
       return fail(400, "invalid_card_id", `Not a valid card id in ${url.pathname}`);
     }
 
@@ -139,12 +140,13 @@ async function handleCard(
     // that is verified is exactly the one that will be sent to Metabase.
     const authz = authorizeParams(user, declaredTags, query);
     if (!authz.ok) {
-      console.log(`Authorize failed for card ${cardId}: ${authz.message}`);
+      console.warn(`card ${cardId}: denied (${authz.message})`);
       return fail(authz.status, "Error", authz.message);
     }
 
     const built = buildCardParams(query, cardInfo);
     if ("missing" in built) {
+      console.warn(`card ${cardId}: missing required parameter ${built.missing.name}`);
       return fail(
         400,
         "missing_parameter",
@@ -156,16 +158,11 @@ async function handleCard(
 
     if (built.assumed) {
       console.warn(
-        `Card ${cardId}: card definition unreadable, sending ${cardParams.length} ` +
-          `parameter(s) optimistically as template-tag variables: ` +
-          `${cardParams.map((p: any) => p.target?.[1]?.[1]).join(", ") || "(none)"}`,
+        `card ${cardId} [no card metadata] params: ${describeParams(cardParams)}`,
       );
+    } else {
+      console.log(`card ${cardId} params: ${describeParams(cardParams)}`);
     }
-
-    console.log(
-      `Question ${cardId} parameters`,
-      JSON.stringify(cardParams, null, 2)
-    );
 
     // get data with caching.
     // The key covers the card AND every resolved parameter value, so an
@@ -193,15 +190,27 @@ async function handleCard(
     const err = e as Error;
     // Log every failure. Previously errors were only returned to the client,
     // so a failing request left nothing in the server log.
-    console.error(
-      `Card request failed for ${url.pathname}${url.search}: ${err?.name}: ${err?.message}`,
-    );
+    console.error(`card request failed ${url.pathname}${url.search}: ${err?.message}`);
     if (err instanceof UserAuthError) {
       return fail(401, "unauthorized", err.message);
     }
     return fail(400, err?.name || "error", err?.message || "generic error");
   }
 }
+
+// Compact one-line summary of the parameters sent to Metabase, e.g.
+//   org_id=1309  campaign_id=1000
+// Falls back to the raw target when a parameter has no recognisable tag name.
+const describeParams = (params: any[]): string => {
+  if (params.length === 0) return "(none)";
+  return params
+    .map((p) => {
+      const tag = p?.target?.[1]?.[1] ?? p?.id ?? "?";
+      const value = Array.isArray(p?.value) ? p.value.join("|") : p?.value;
+      return `${tag}=${value}`;
+    })
+    .join("  ");
+};
 
 // The card id is the path segment immediately after /card/. Strictly validated
 // so a malformed path yields a clear 400 instead of parseInt("card") -> NaN.

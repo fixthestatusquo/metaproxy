@@ -233,21 +233,16 @@ export const getParametersInfo = async (
         ));
 
     if (!isNative) {
-      console.warn(
-        `Card ${cardId} is not a native query ` +
-          `(dataset_query.type=${JSON.stringify(datasetQuery["type"])}, ` +
-          `query_type=${JSON.stringify(card["query_type"])}); ` +
-          `it declares no template-tags, so URL parameters cannot be applied`,
-      );
+      console.warn(`card ${cardId}: not a native query, no parameters can be applied`);
       return {};
     }
 
     // Native card but we could not find its tags. Do not assume it has none:
     // that would silently drop every parameter. Signal "unknown" instead.
     console.warn(
-      `Card ${cardId} is a native query but no template-tags were found in ` +
-        `the API response (looked in: ${tagSources.map(([w]) => w).join(", ")}). ` +
-        `Falling back to optimistic parameter encoding.`,
+      `card ${cardId}: native query but no template-tags found in the API ` +
+        `response (checked ${tagSources.map(([w]) => w).join(", ")}); ` +
+        `sending parameters optimistically`,
     );
     return null;
   }
@@ -271,10 +266,7 @@ export const getParametersInfo = async (
     params[name] = info;
   }
 
-  console.debug(
-    `Card ${cardId}: read ${Object.keys(params).length} template-tag(s) from ${source}`,
-  );
-
+  void source;
   return params;
 };
 
@@ -415,10 +407,6 @@ export const fetchCard = async (id: number, params: any): Promise<any> => {
     params && params.length > 0
       ? "parameters=" + encodeURIComponent(JSON.stringify(params))
       : undefined;
-
-  if (process.env["DEBUG_PARAMS"] === "1") {
-    console.log(`POST ${url} parameters=${JSON.stringify(params)}`);
-  }
 
   const resp = await fetch(url, {
     method: "POST",
