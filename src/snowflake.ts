@@ -4,16 +4,10 @@ import {
   UserAuthError,
   type UserData,
 } from "./user.ts";
+import { corsHeaders } from "./cors.ts";
 
 import { fetchCampaign } from "snowflake/fetch.js";
 import { upload } from "snowflake/upload.js";
-
-const corsHeaders = (origin: string | undefined): Record<string, string> => {
-  if (origin && allowedOrigins.indexOf(origin) >= 0) {
-    return { "Access-Control-Allow-Origin": origin, Vary: "Origin" };
-  }
-  return { Vary: "Origin" };
-};
 
 export async function handleSnowflake(
   req: IncomingMessage,

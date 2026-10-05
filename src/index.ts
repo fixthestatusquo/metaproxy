@@ -16,7 +16,8 @@ import {
   type UserData,
 } from "./user.ts";
 
-import {handleSnowflake} from "./snowflake.ts";
+import { handleSnowflake } from "./snowflake.ts";
+import { corsHeaders } from "./cors.ts";
 
 
 interface Context {
@@ -48,21 +49,6 @@ if (!usingApiKey) {
   }
 }
 
-const allowedOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(",").map((d: string) => d.trim())
-  : ["http://localhost:3000", "http://localhost:3001"];
-
-// Replaces the `cors` middleware for this proxy: reflect the origin if it is
-// allowed, and answer preflight OPTIONS requests.
-const corsHeaders = (
-  origin: string | undefined
-): Record<string, string> => {
-  if (origin && allowedOrigins.indexOf(origin) >= 0) {
-    return { "Access-Control-Allow-Origin": origin, Vary: "Origin" };
-  }
-  return { Vary: "Origin" };
-};
-
 const server = http.createServer(async (req: IncomingMessage, res: ServerResponse) => {
   const origin = req.headers.origin;
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
@@ -80,7 +66,15 @@ const server = http.createServer(async (req: IncomingMessage, res: ServerRespons
   }
 
   if (url.pathname.startsWith("/snowflake/")) {
-    handleSnowflake(req, res, url);
+    // An error escaping the handler would be an unhandled rejection, which
+    // stops the whole process (every route then 502s until the restart).
+    handleSnowflake(req, res, url).catch((e) => {
+      console.error(`snowflake request failed ${url.pathname}:`, e);
+      if (!res.headersSent) {
+        res.writeHead(500, { ...corsHeaders(origin), "Content-Type": "application/json" });
+      }
+      res.end(JSON.stringify({ error: "internal_error", message: "Snowflake request failed" }));
+    });
     return;
   }
 
