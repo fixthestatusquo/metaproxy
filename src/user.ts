@@ -1,12 +1,18 @@
 // Resolves a Proca user's organisation membership via the Proca GraphQL API,
 // and enforces per-parameter access control.
 
-export type UserData = { orgIds: number[]; orgNames: string[] };
+// roles maps org name -> the user's role in it (owner, campaigner, ...)
+export type UserData = {
+  orgIds: number[];
+  orgNames: string[];
+  roles: Record<string, string>;
+};
 
 const USER_ORGS_QUERY = /* GraphQL */ `
   query UserOrgs {
     currentUser {
       roles {
+        role
         org {
           __typename
           name
@@ -29,36 +35,70 @@ export class UserAuthError extends Error {
   }
 }
 
+// A failed Proca API call, with Proca's own message and the status to answer
+// our caller with: Proca's 4xx as is, 5xx (or no answer at all) as 502 Bad
+// Gateway. Extends UserAuthError so /card keeps answering 401 for any failure.
+export class ProcaError extends UserAuthError {
+  status: number;
+  constructor(message: string, status: number) {
+    // say where it comes from, like "Cloudflare KV upload failed:"
+    super(`Proca API: ${message}`);
+    this.name = "ProcaError";
+    this.status = status;
+  }
+}
+
+// POSTs a GraphQL query to Proca and returns the parsed body, GraphQL `errors`
+// included (callers decide what those mean). Throws ProcaError when Proca
+// can't be reached or answers with an HTTP error.
+const procaQuery = async (
+  query: string,
+  variables: Record<string, unknown>,
+  auth: string,
+): Promise<any> => {
+  const apiUrl = process.env["PROCA_URL"] || "https://api.proca.app/api";
+  let resp: Response;
+  try {
+    resp = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: auth },
+      body: JSON.stringify({ query, variables }),
+    });
+  } catch (e) {
+    throw new ProcaError(`unreachable (${(e as Error).message})`, 502);
+  }
+  const text = await resp.text();
+  let body: any = null;
+  try {
+    body = JSON.parse(text);
+  } catch {}
+  if (!resp.ok) {
+    throw new ProcaError(
+      graphqlMessage(body) || text.trim() || `HTTP ${resp.status}`,
+      resp.status >= 500 ? 502 : resp.status,
+    );
+  }
+  return body;
+};
+
+// first GraphQL error message, if any
+const graphqlMessage = (body: any): string | undefined =>
+  body?.errors?.[0]?.message;
+
 // Resolves the user from the incoming Authorization header (e.g. "Bearer <jwt>").
 // Returns null when no header was supplied at all. Throws UserAuthError when a
 // header was supplied but the lookup failed, so an expired/invalid token is
 // distinguishable from a valid user who simply has no orgs.
 export const resolveUser = async (auth?: string): Promise<UserData | null> => {
   if (!auth) return null;
-  const apiUrl = process.env["PROCA_URL"] || "https://api.proca.app/api";
+  const body = await procaQuery(USER_ORGS_QUERY, {}, auth);
 
-  const resp = await fetch(apiUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: auth,
-    },
-    body: JSON.stringify({ query: USER_ORGS_QUERY, variables: {} }),
-  });
-
-  if (!resp.ok) {
-    throw new UserAuthError(`Proca user lookup failed: HTTP ${resp.status}`);
+  // currentUser fails with a GraphQL error when the token isn't accepted
+  if (body?.errors) {
+    throw new ProcaError(graphqlMessage(body) || "user lookup failed", 401);
   }
 
-  const body: any = await resp.json();
-
-  if (body.errors) {
-    throw new UserAuthError(
-      `Proca query errors: ${JSON.stringify(body.errors)}`,
-    );
-  }
-
-  const r: UserData = { orgIds: [], orgNames: [] };
+  const r: UserData = { orgIds: [], orgNames: [], roles: {} };
   const roles = body?.data?.currentUser?.roles ?? [];
 
   for (const role of roles) {
@@ -69,10 +109,32 @@ export const resolveUser = async (auth?: string): Promise<UserData | null> => {
     }
     if (org.name) {
       r.orgNames.push(org.name);
+      if (role.role) r.roles[org.name] = role.role;
     }
   }
 
   return r;
+};
+
+const CAMPAIGN_ORG_QUERY = /* GraphQL */ `
+  query CampaignOrg($name: String!) {
+    campaign(name: $name) {
+      org {
+        name
+      }
+    }
+  }
+`;
+
+// Name of the org leading (coordinating) the campaign. Throws ProcaError 404,
+// with Proca's message, when there is no such campaign.
+export const leadOrg = async (campaign: string, auth: string): Promise<string> => {
+  const body = await procaQuery(CAMPAIGN_ORG_QUERY, { name: campaign }, auth);
+  const org = body?.data?.campaign?.org?.name;
+  if (!org) {
+    throw new ProcaError(graphqlMessage(body) || `Campaign ${campaign} not found`, 404);
+  }
+  return org;
 };
 
 // Parameter names that are org-scoped and therefore require an authenticated

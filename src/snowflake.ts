@@ -1,8 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import {
-  authorizeParams,
+  leadOrg,
   resolveUser,
-  UserAuthError,
+  ProcaError,
+  type AuthResult,
   type UserData,
 } from "./user.ts";
 import { corsHeaders } from "./cors.ts";
@@ -30,8 +31,6 @@ export async function handleSnowflake(
   try {
     const { action, campaign } = parseCampaign(url.pathname);
 
-    // upload publishes, so a plain GET (link preview, crawler, prefetch,
-    // <img src>) must never trigger it
     const method = action ? METHODS[action] : undefined;
     if (!method) {
       return fail(404, "unknown_action", `Unknown snowflake action: ${action}`);
@@ -60,6 +59,21 @@ export async function handleSnowflake(
       user = await resolveUser(auth);
     }
 
+    // check only reads texts that are public anyway: any logged-in user.
+    // upload publishes: owners and campaigners of the lead org only.
+    const authz: AuthResult =
+      action === "upload"
+        ? await authorizeCampaign(user, auth, campaign)
+        : user
+          ? { ok: true }
+          : { ok: false, status: 401, message: "Authentication required" };
+    if (!authz.ok) {
+      console.warn(
+        `snowflake ${action} ${campaign}: denied (${authz.message})`,
+      );
+      return fail(authz.status, "Error", authz.message);
+    }
+
     const data = await fetchCampaign(campaign, { local: false, save: false });
     console.log(data);
     if (action === "check") {
@@ -71,7 +85,17 @@ export async function handleSnowflake(
       return;
     }
     if (action === "upload") {
-      const keys = await upload(campaign, data.content);
+      let keys: string[];
+      try {
+        keys = await upload(campaign, data.content);
+      } catch (e) {
+        const msg = (e as Error).message;
+        return fail(
+          /^missing CLOUDFLARE_/.test(msg) ? 500 : 502,
+          "cloudflare_error",
+          `Cloudflare KV upload failed: ${msg}`,
+        );
+      }
       res.writeHead(200, {
         ...corsHeaders(origin),
         "Content-Type": "application/json",
@@ -81,12 +105,49 @@ export async function handleSnowflake(
     }
   } catch (e) {
     const err = e as Error;
-    if (err instanceof UserAuthError) {
-      return fail(401, "unauthorized", err.message);
+    if (err instanceof ProcaError) {
+      return fail(err.status, "proca_error", err.message);
+    }
+    const engine = engineProcaStatus(err?.message);
+    if (engine) {
+      return fail(engine, "proca_error", `Proca API: ${err.message}`);
     }
     return fail(400, err?.name || "error", err?.message || "generic error");
   }
 }
+
+const engineProcaStatus = (message?: string): number | undefined => {
+  const http = message?.match(/^api\.proca\.app (\d{3})$/);
+  if (http) return +http[1] >= 500 ? 502 : +http[1];
+  if (message && /^campaign .* not found$/.test(message)) return 404;
+  return undefined;
+};
+
+// roles in the lead org allowed to upload the snowflake
+const ALLOWED_ROLES = ["owner", "campaigner"];
+
+const authorizeCampaign = async (
+  user: UserData | null,
+  auth: string | undefined,
+  campaign: string | undefined,
+): Promise<AuthResult> => {
+  if (!user || !auth) {
+    return { ok: false, status: 401, message: "Authentication required" };
+  }
+  if (!campaign) {
+    return { ok: false, status: 404, message: "Missing campaign name" };
+  }
+  const org = await leadOrg(campaign, auth);
+  const role = user.roles[org];
+  if (!role || ALLOWED_ROLES.indexOf(role) < 0) {
+    return {
+      ok: false,
+      status: 403,
+      message: `Only owners and campaigners of ${org} can publish the snowflake of ${campaign}`,
+    };
+  }
+  return { ok: true };
+};
 
 // The campaign name is the path segment immediately after /snowflake/. Strictly validated
 // so a malformed path yields a clear 400

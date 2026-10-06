@@ -1,9 +1,6 @@
-// Types for the parts of snowflake_engine (plain JS, no types) that we use.
-
 declare module "snowflake/fetch.js" {
   // lang -> part -> list of variant texts
   export type Variants = Record<string, Record<string, string[]>>;
-
   export type Analysis = {
     analysis: Record<string, Record<string, number>>; // lang -> part -> number of variants
     error: Record<string, Record<string, number | false>>; // diff with max, false = missing
@@ -22,5 +19,8 @@ declare module "snowflake/fetch.js" {
 declare module "snowflake/upload.js" {
   import type { Variants } from "snowflake/fetch.js";
   // one KV value per language, returns the keys written
-  export function upload(name: string | undefined, variants: Variants): Promise<string[]>;
+  export function upload(
+    name: string | undefined,
+    variants: Variants,
+  ): Promise<string[]>;
 }
