@@ -36,9 +36,50 @@ Runs Metabase card `:id` (must belong to an allowed collection) with the given q
 
 **Response:** `200` with the card's JSON result; `400` with `{ "error", "message" }` on failure (e.g. forbidden collection, unauthenticated org param).
 
-### `GET /snowflake/check/campaign`
+### Snowflake
 
-### `POST /snowflake/upload/campaign`
+The snowflake routes wrap the [snowflake engine](https://github.com/fixthestatusquo/snowflake_engine) (`src/snowflake.ts`). A snowflake turns each language of a Proca campaign into lists of text variants per letter part (subject, body parts, twitter). The engine reads the campaign from `api.proca.app`, and `upload` publishes the variants to Cloudflare KV under one key per language, `<campaign>-<lang>`. The public worker then serves a random combination of variants at `https://snowflake.proca.app/<campaign>/<lang>`.
+
+Every snowflake route requires `Authorization: Bearer <proca-jwt>`. Errors are returned as `{ "error", "message" }`. The `message` is meant to be shown to the user.
+
+### `GET /snowflake/check/:campaign`
+
+Fetches the campaign and returns its variant analysis without publishing anything. Any logged-in user can call it, because the texts are public anyway.
+
+**Response:** `200` with `{ analysis, content }`:
+
+- `content`: `{ <lang>: { <part>: [variant, …] } }`, the texts that would be published.
+- `analysis.analysis`: `{ <lang>: { <part>: count } }`, the number of variants per language and part.
+- `analysis.max`: the highest count of each part across languages.
+- `analysis.error`: `{ <lang>: { <part>: diff } }` for each language with fewer variants than `max`. `diff` is negative, or `false` when the part is missing.
+- `analysis.variants`: the total number of variants of each part, summed over languages.
+- `analysis.total`: the number of combinations per language (twitter excluded).
+- `analysis.all`: parts that are `empty` or `single` in every language. It also has `subject` when the best language has fewer than 5 subjects.
+
+The analysis always covers every language, because "fewer variants" only means something compared to the other languages.
+
+### `POST /snowflake/upload/:campaign[?lang=<lang>]`
+
+Fetches the campaign and writes its variants to Cloudflare KV. Only owners and campaigners of the campaign's lead org can call it.
+
+**Query parameters:**
+
+- `lang` (optional): publish only that language (key `<campaign>-<lang>`). It is case-insensitive. Without it, every language is published.
+
+**Response:** `200` with `{ analysis, content, keys }`. `analysis` and `content` are the same as for `check` and cover all languages. `keys` lists only the KV keys actually written, e.g. `["mtt_x-fr"]`.
+
+**Errors:**
+
+| Status | `error` | When |
+|---|---|---|
+| `400` | `invalid_lang` | `lang` is empty, or the campaign has no such language (the message lists the available ones) |
+| `401` | `Error` | No `Authorization` header |
+| `403` | `Error` | The user is not an owner or campaigner of the lead org |
+| `404` | `proca_error` | The campaign doesn't exist |
+| `405` | `method_not_allowed` | Wrong HTTP method (`check` is `GET`, `upload` is `POST`) |
+| `500` | `cloudflare_error` | The `CLOUDFLARE_*` variables are not configured |
+| `502` | `cloudflare_error` | The Cloudflare KV API rejected the write. If several languages are uploaded, the ones before the failure are already written |
+| `4xx/502` | `proca_error` | The Proca API failed or rejected the token |
 
 ---
 
@@ -55,6 +96,9 @@ All configuration is via environment variables:
 | `CORS_ORIGIN` | | `http://localhost:3000,http://localhost:3001` | Comma-separated list of allowed origins |
 | `CACHE_TIMEOUT` | | `15` | TTL in seconds for cached card results |
 | `PORT` | | `4040` | HTTP listen port |
+| `CLOUDFLARE_ACCOUNT_ID` | for `/snowflake/upload` | — | Cloudflare account of the `snowflake` KV namespace |
+| `CLOUDFLARE_KV_NAMESPACE_ID` | for `/snowflake/upload` | — | ID of the `snowflake` KV namespace |
+| `CLOUDFLARE_API_TOKEN` | for `/snowflake/upload` | — | Cloudflare API token with write access to that namespace (secret) |
 
 > Note: credentials in `.env` are for development only. Keep `.env` git-ignored (or rotate credentials if they were ever committed).
 
@@ -100,6 +144,8 @@ src/
   index.ts     # HTTP server (node:http), routing, CORS, caching, session refresh
   metabase.ts  # Metabase API client: session, card metadata, param wrapping, fetchCard
   user.ts      # Proca user resolution + parameter access control
+  snowflake.ts # /snowflake/check and /snowflake/upload (wraps the snowflake engine)
+  engine.d.ts  # types for the snowflake engine (plain JS dependency)
   cache.ts     # tiny in-memory TTL cache
 ```
 
