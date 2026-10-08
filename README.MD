@@ -2,7 +2,7 @@
 
 A lightweight reverse proxy that lets the browser query **Metabase** cards directly, forwarding a **Proca** JWT and enforcing per-parameter access control.
 
-It runs on **Node ≥ 23.6 natively — zero runtime dependencies and no build step**. The TypeScript source runs directly via Node's built-in type stripping (no `tsc`, no `dist/`). Just the built-in `fetch`, `node:http`, and a small in-memory cache.
+It runs on **Node ≥ 22.18 natively, with no build step**. The TypeScript source runs directly via Node's built-in type stripping (no `tsc`, no `dist/`). The Metabase proxy uses only the built-in `fetch`, `node:http` and a small in-memory cache. The one runtime dependency is the [snowflake engine](https://github.com/fixthestatusquo/snowflake_engine), used by the `/snowflake` routes.
 
 ---
 
@@ -20,7 +20,7 @@ It runs on **Node ≥ 23.6 natively — zero runtime dependencies and no build s
 - **API-key auth to Metabase** — authenticates with a static Metabase API key (`METABASE_KEY`), sent as the `X-API-Key` header on every request (`src/metabase.ts`). No login/session lifecycle to manage.
 - **TTL result caching** — card metadata and card results are cached in-memory for `CACHE_TIMEOUT` seconds (default `15`), keyed by card id and the resolved parameter values (so an org-scoped result is never served for a different org).
 - **CORS** — defaults to `localhost:3000` and `localhost:3001`; override with a comma-separated `CORS_ORIGIN`.
-- **Zero runtime dependencies** — only Node's standard library at runtime.
+- **One runtime dependency** — the snowflake engine (installed from GitHub). Everything else is Node's standard library.
 
 ---
 
@@ -106,9 +106,12 @@ All configuration is via environment variables:
 
 ## Getting started
 
-No install and no build step — just run it with Node.
+No build step. One `npm install` fetches the snowflake engine, then run it with Node.
 
 ```bash
+# install the snowflake engine (a GitHub dependency; .npmrc allows git deps for npm ≥ 12)
+npm install
+
 # configure
 cp .env.example .env   # or export the env vars above
 
@@ -120,7 +123,7 @@ npm start              # => node bin/metaproxy.mjs
 node src/index.ts      # needs the env vars set in your shell
 ```
 
-> Requires Node ≥ 23.6, which runs this TypeScript natively (type stripping). There is no `dist/`, no `tsc`, and no runtime `npm install` needed.
+> Requires Node ≥ 22.18, which runs this TypeScript natively (type stripping). There is no `dist/` and no `tsc` step.
 
 ---
 
@@ -133,7 +136,7 @@ npm start            # node bin/metaproxy.mjs
 node src/index.ts    # run without the .env loader
 ```
 
-There are no dependencies — everything is Node's standard library plus the `.ts` source in `src/`.
+Apart from the snowflake engine, everything is Node's standard library plus the `.ts` source in `src/`. The only dev dependency is `@types/node`, for editor type checking.
 
 ---
 
