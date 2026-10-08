@@ -74,6 +74,15 @@ export async function handleSnowflake(
       return fail(authz.status, "Error", authz.message);
     }
 
+    // ?lang=xx restricts upload to one language; check always covers all
+    const lang =
+      action === "upload"
+        ? (url.searchParams.get("lang")?.trim().toLowerCase() ?? null)
+        : null;
+    if (lang === "") {
+      return fail(400, "invalid_lang", "Empty lang parameter");
+    }
+
     const data = await fetchCampaign(campaign, { local: false, save: false });
     console.log(data);
     if (action === "check") {
@@ -85,9 +94,21 @@ export async function handleSnowflake(
       return;
     }
     if (action === "upload") {
+      let content = data.content;
+      if (lang !== null) {
+        if (!Object.hasOwn(content, lang)) {
+          const known = Object.keys(content).join(", ") || "none";
+          return fail(
+            400,
+            "invalid_lang",
+            `Unknown language "${lang}" for ${campaign} (available: ${known})`,
+          );
+        }
+        content = { [lang]: content[lang] };
+      }
       let keys: string[];
       try {
-        keys = await upload(campaign, data.content);
+        keys = await upload(campaign, content);
       } catch (e) {
         const msg = (e as Error).message;
         return fail(
