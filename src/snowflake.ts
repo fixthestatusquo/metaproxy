@@ -10,6 +10,8 @@ import { corsHeaders } from "./cors.ts";
 
 import { fetchCampaign } from "snowflake/fetch.js";
 import { upload } from "snowflake/upload.js";
+import { analyse } from "snowflake/fetch.js";
+import { deployed, forgetDeployed, inSync } from "./deployed.ts";
 
 const METHODS: Record<string, string> = { check: "GET", upload: "POST" };
 
@@ -84,13 +86,29 @@ export async function handleSnowflake(
     }
 
     const data = await fetchCampaign(campaign, { local: false, save: false });
-    console.log(data);
     if (action === "check") {
+      // what the worker serves, next to the config. KV trouble must not hide
+      // the config analysis: report it in deployedError instead
+      let live: Record<string, unknown> | null = null;
+      let deployedError: string | undefined;
+      try {
+        const kv = await deployed(campaign!, Object.keys(data.content));
+        live = {
+          // config parts, so a part absent from KV is reported as missing
+          analysis: analyse(kv.content, Object.keys(data.analysis.max)),
+          content: kv.content,
+          inSync: inSync(data.content, kv.content),
+          errors: kv.errors,
+        };
+      } catch (e) {
+        deployedError = `Cloudflare KV read failed: ${(e as Error).message}`;
+        console.warn(`snowflake check ${campaign}: ${deployedError}`);
+      }
       res.writeHead(200, {
         ...corsHeaders(origin),
         "Content-Type": "application/json",
       });
-      res.end(JSON.stringify(data));
+      res.end(JSON.stringify({ config: data, deployed: live, deployedError }));
       return;
     }
     if (action === "upload") {
@@ -110,6 +128,8 @@ export async function handleSnowflake(
       try {
         keys = await upload(campaign, content);
       } catch (e) {
+        // a failure halfway may still have written some languages
+        forgetDeployed(campaign!);
         const msg = (e as Error).message;
         return fail(
           /^missing CLOUDFLARE_/.test(msg) ? 500 : 502,
@@ -117,6 +137,7 @@ export async function handleSnowflake(
           `Cloudflare KV upload failed: ${msg}`,
         );
       }
+      forgetDeployed(campaign!);
       res.writeHead(200, {
         ...corsHeaders(origin),
         "Content-Type": "application/json",

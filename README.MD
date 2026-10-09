@@ -44,19 +44,30 @@ Every snowflake route requires `Authorization: Bearer <proca-jwt>`. Errors are r
 
 ### `GET /snowflake/check/:campaign`
 
-Fetches the campaign and returns its variant analysis without publishing anything. Any logged-in user can call it, because the texts are public anyway.
+Fetches the campaign and returns its variant analysis without publishing anything. It also reads back what is currently deployed in Cloudflare KV, so the two can be compared. Any logged-in user can call it, because the texts are public anyway.
 
-**Response:** `200` with `{ analysis, content }`:
+**Response:** `200` with `{ config: { analysis, content }, deployed, deployedError? }`:
 
-- `content`: `{ <lang>: { <part>: [variant, …] } }`, the texts that would be published.
-- `analysis.analysis`: `{ <lang>: { <part>: count } }`, the number of variants per language and part.
-- `analysis.max`: the highest count of each part across languages.
-- `analysis.error`: `{ <lang>: { <part>: diff } }` for each language with fewer variants than `max`. `diff` is negative, or `false` when the part is missing.
-- `analysis.variants`: the total number of variants of each part, summed over languages.
-- `analysis.total`: the number of combinations per language (twitter excluded).
-- `analysis.all`: parts that are `empty` or `single` in every language. It also has `subject` when the best language has fewer than 5 subjects.
+- `config.content`: `{ <lang>: { <part>: [variant, …] } }`, the texts that would be published (from the config).
+- `config.analysis.analysis`: `{ <lang>: { <part>: count } }`, the number of variants per language and part.
+- `config.analysis.max`: the highest count of each part across languages.
+- `config.analysis.error`: `{ <lang>: { <part>: diff } }` for each language with fewer variants than `max`. `diff` is negative, or `false` when the part is missing.
+- `config.analysis.variants`: the total number of variants of each part, summed over languages.
+- `config.analysis.total`: the number of combinations per language (twitter excluded).
+- `config.analysis.all`: parts that are `empty` or `single` in every language. It also has `subject` when the best language has fewer than 5 subjects.
 
 The analysis always covers every language, because "fewer variants" only means something compared to the other languages.
+
+`deployed` describes the KV keys of the campaign, i.e. what `snowflake.proca.app/<campaign>/<lang>` serves:
+
+- `deployed.content`: same shape as `config.content`, but only for the languages that have a KV key. A language missing from it is not deployed. It can include languages that were deployed earlier and have since been removed from the config, because those are still live.
+- `deployed.analysis`: the same analysis as `config.analysis`, computed over the deployed texts. It uses the config's part names, so a part missing from KV shows up in `error` as `false`.
+- `deployed.inSync`: `{ <lang>: boolean }` for every config language. `true` when the deployed texts are exactly the config texts (part order is ignored).
+- `deployed.errors`: `{ <lang>: message }` for keys that exist but couldn't be read or parsed. Those languages are left out of `deployed.content`, so their state is unknown rather than "not deployed".
+
+If KV can't be listed at all (missing `CLOUDFLARE_*` variables, a token without read access, Cloudflare down), the check still succeeds: `deployed` is `null` and `deployedError` says why.
+
+The deployed state is cached for `CACHE_TIMEOUT` seconds per campaign, to stay under the Cloudflare API rate limit. An upload clears that cache, but KV is eventually consistent, so a check made right after an upload can still briefly return the old texts.
 
 ### `POST /snowflake/upload/:campaign[?lang=<lang>]`
 
@@ -66,7 +77,7 @@ Fetches the campaign and writes its variants to Cloudflare KV. Only owners and c
 
 - `lang` (optional): publish only that language (key `<campaign>-<lang>`). It is case-insensitive. Without it, every language is published.
 
-**Response:** `200` with `{ analysis, content, keys }`. `analysis` and `content` are the same as for `check` and cover all languages. `keys` lists only the KV keys actually written, e.g. `["mtt_x-fr"]`.
+**Response:** `200` with `{ analysis, content, keys }`. `analysis` and `content` are the same as `config.analysis` and `config.content` in `check` (top level here, not nested) and cover all languages. `keys` lists only the KV keys actually written, e.g. `["mtt_x-fr"]`.
 
 **Errors:**
 
@@ -94,11 +105,11 @@ All configuration is via environment variables:
 | `PROCA_URL` | | `https://api.proca.app` | Proca GraphQL API endpoint used to resolve the user |
 | `JWKS_URL` | | — | (reserved) URL of a `jwks.json` for token verification |
 | `CORS_ORIGIN` | | `http://localhost:3000,http://localhost:3001` | Comma-separated list of allowed origins |
-| `CACHE_TIMEOUT` | | `15` | TTL in seconds for cached card results |
+| `CACHE_TIMEOUT` | | `15` | TTL in seconds for cached card results and the deployed snowflake state |
 | `PORT` | | `4040` | HTTP listen port |
-| `CLOUDFLARE_ACCOUNT_ID` | for `/snowflake/upload` | — | Cloudflare account of the `snowflake` KV namespace |
-| `CLOUDFLARE_KV_NAMESPACE_ID` | for `/snowflake/upload` | — | ID of the `snowflake` KV namespace |
-| `CLOUDFLARE_API_TOKEN` | for `/snowflake/upload` | — | Cloudflare API token with write access to that namespace (secret) |
+| `CLOUDFLARE_ACCOUNT_ID` | for `/snowflake` | — | Cloudflare account of the `snowflake` KV namespace |
+| `CLOUDFLARE_KV_NAMESPACE_ID` | for `/snowflake` | — | ID of the `snowflake` KV namespace |
+| `CLOUDFLARE_API_TOKEN` | for `/snowflake` | — | Cloudflare API token with read and write access to that namespace (secret). Without them, `upload` fails and `check` returns `deployed: null` |
 
 > Note: credentials in `.env` are for development only. Keep `.env` git-ignored (or rotate credentials if they were ever committed).
 
@@ -149,6 +160,7 @@ src/
   user.ts      # Proca user resolution + parameter access control
   snowflake.ts # /snowflake/check and /snowflake/upload (wraps the snowflake engine)
   engine.d.ts  # types for the snowflake engine (plain JS dependency)
+  deployed.ts  # reads the deployed snowflake back from Cloudflare KV
   cache.ts     # tiny in-memory TTL cache
 ```
 

@@ -10,6 +10,9 @@ declare module "snowflake/fetch.js" {
     all: { empty: string[]; single: string[]; subject?: number };
   };
 
+  // knownParts: part names to report even when absent from every language
+  export function analyse(built: Variants, knownParts?: string[]): Analysis;
+
   export function fetchCampaign(
     name: string | undefined,
     opts?: { local?: boolean; save?: boolean },

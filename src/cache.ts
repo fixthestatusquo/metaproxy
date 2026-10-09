@@ -19,6 +19,10 @@ export class Cache {
     return entry.value
   }
 
+  delete(key: string): void {
+    this.store.delete(key)
+  }
+
   set(key: string, value: any, ttlSeconds?: number): void {
     const ttl = ttlSeconds ?? this.ttlSeconds
     this.store.set(key, { value, expiresAt: Date.now() + ttl * 1000 })
