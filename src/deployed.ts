@@ -35,11 +35,15 @@ const kvBase = (): { base: string; token: string } => {
 
 // Throws when the listing fails (credentials, network): the deployed state is
 // then unknown. A single unreadable value only lands in `errors`.
+// `written`: texts an upload just wrote. They replace what KV returns for
+// those languages, which may still be the previous version (KV is eventually
+// consistent), and bypass the cache.
 export const deployed = async (
   campaign: string,
   configLangs: string[],
+  written?: Variants,
 ): Promise<Deployed> => {
-  const cached = cache.get(campaign);
+  const cached = written ? undefined : cache.get(campaign);
   if (cached) return cached;
 
   const { base, token } = kvBase();
@@ -79,6 +83,10 @@ export const deployed = async (
       }
     }),
   );
+  for (const [lang, texts] of Object.entries(written ?? {})) {
+    result.content[lang] = texts;
+    delete result.errors[lang];
+  }
   cache.set(campaign, result);
   return result;
 };

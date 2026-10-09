@@ -67,7 +67,7 @@ The analysis always covers every language, because "fewer variants" only means s
 
 If KV can't be listed at all (missing `CLOUDFLARE_*` variables, a token without read access, Cloudflare down), the check still succeeds: `deployed` is `null` and `deployedError` says why.
 
-The deployed state is cached for `CACHE_TIMEOUT` seconds per campaign, to stay under the Cloudflare API rate limit. An upload clears that cache, but KV is eventually consistent, so a check made right after an upload can still briefly return the old texts.
+The deployed state is cached for `CACHE_TIMEOUT` seconds per campaign, to stay under the Cloudflare API rate limit. An upload replaces the cached state with its own `deployed`.
 
 ### `POST /snowflake/upload/:campaign[?lang=<lang>]`
 
@@ -77,7 +77,9 @@ Fetches the campaign and writes its variants to Cloudflare KV. Only owners and c
 
 - `lang` (optional): publish only that language (key `<campaign>-<lang>`). It is case-insensitive. Without it, every language is published.
 
-**Response:** `200` with `{ analysis, content, keys }`. `analysis` and `content` are the same as `config.analysis` and `config.content` in `check` (top level here, not nested) and cover all languages. `keys` lists only the KV keys actually written, e.g. `["mtt_x-fr"]`.
+**Response:** `200` with `{ config, deployed, deployedError?, keys }`, the same shape as `check` plus `keys`, so the dashboard can replace its check data with it. `config` covers all languages, even with `lang`. `keys` lists only the KV keys actually written, e.g. `["mtt_x-fr"]`.
+
+`deployed` is the state right after the upload: the languages just written come from the uploaded texts, the others are read from KV. Reading KV back could still return the previous version for a moment, so those languages are already `inSync: true`. The result also replaces the cached deployed state, so a `check` right after gets the same answer. If KV can't be read after a successful write, the upload still returns `200` with `deployed: null` and `deployedError`.
 
 **Errors:**
 

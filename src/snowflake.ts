@@ -10,7 +10,7 @@ import { corsHeaders } from "./cors.ts";
 
 import { fetchCampaign } from "snowflake/fetch.js";
 import { upload } from "snowflake/upload.js";
-import { analyse } from "snowflake/fetch.js";
+import { analyse, type Analysis, type Variants } from "snowflake/fetch.js";
 import { deployed, forgetDeployed, inSync } from "./deployed.ts";
 
 const METHODS: Record<string, string> = { check: "GET", upload: "POST" };
@@ -87,28 +87,12 @@ export async function handleSnowflake(
 
     const data = await fetchCampaign(campaign, { local: false, save: false });
     if (action === "check") {
-      // what the worker serves, next to the config. KV trouble must not hide
-      // the config analysis: report it in deployedError instead
-      let live: Record<string, unknown> | null = null;
-      let deployedError: string | undefined;
-      try {
-        const kv = await deployed(campaign!, Object.keys(data.content));
-        live = {
-          // config parts, so a part absent from KV is reported as missing
-          analysis: analyse(kv.content, Object.keys(data.analysis.max)),
-          content: kv.content,
-          inSync: inSync(data.content, kv.content),
-          errors: kv.errors,
-        };
-      } catch (e) {
-        deployedError = `Cloudflare KV read failed: ${(e as Error).message}`;
-        console.warn(`snowflake check ${campaign}: ${deployedError}`);
-      }
+      const live = await withDeployed(campaign!, data);
       res.writeHead(200, {
         ...corsHeaders(origin),
         "Content-Type": "application/json",
       });
-      res.end(JSON.stringify({ config: data, deployed: live, deployedError }));
+      res.end(JSON.stringify({ config: data, ...live }));
       return;
     }
     if (action === "upload") {
@@ -137,12 +121,14 @@ export async function handleSnowflake(
           `Cloudflare KV upload failed: ${msg}`,
         );
       }
+      // same shape as check, so the dashboard can refresh from it directly
       forgetDeployed(campaign!);
+      const live = await withDeployed(campaign!, data, content);
       res.writeHead(200, {
         ...corsHeaders(origin),
         "Content-Type": "application/json",
       });
-      res.end(JSON.stringify({ ...data, keys }));
+      res.end(JSON.stringify({ config: data, ...live, keys }));
       return;
     }
   } catch (e) {
@@ -157,6 +143,31 @@ export async function handleSnowflake(
     return fail(400, err?.name || "error", err?.message || "generic error");
   }
 }
+
+// What the worker serves, next to the config. KV trouble must not hide the
+// config analysis (or a successful upload): report it in deployedError instead
+const withDeployed = async (
+  campaign: string,
+  data: { analysis: Analysis; content: Variants },
+  written?: Variants,
+): Promise<{ deployed: object | null; deployedError?: string }> => {
+  try {
+    const kv = await deployed(campaign, Object.keys(data.content), written);
+    return {
+      deployed: {
+        // config parts, so a part absent from KV is reported as missing
+        analysis: analyse(kv.content, Object.keys(data.analysis.max)),
+        content: kv.content,
+        inSync: inSync(data.content, kv.content),
+        errors: kv.errors,
+      },
+    };
+  } catch (e) {
+    const deployedError = `Cloudflare KV read failed: ${(e as Error).message}`;
+    console.warn(`snowflake ${campaign}: ${deployedError}`);
+    return { deployed: null, deployedError };
+  }
+};
 
 const engineProcaStatus = (message?: string): number | undefined => {
   const http = message?.match(/^api\.proca\.app (\d{3})$/);
